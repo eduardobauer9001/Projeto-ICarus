@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -12,9 +11,13 @@
         theme: {
           extend: {
             colors: {
-              'brand-blue': '#0077c2',
-              'brand-blue-dark': '#005a9e',
-              'brand-gray': '#f0f2f5',
+              'primary': '#3b82f6', // A modern, vibrant blue
+              'primary-hover': '#2563eb',
+              'secondary': '#64748b',
+              'light': '#f1f5f9',
+              'background': '#f8fafc',
+              'text-primary': '#1e293b',
+              'text-secondary': '#475569',
             }
           }
         }
@@ -31,7 +34,7 @@
 }
 </script>
 </head>
-  <body class="bg-brand-gray">
+  <body class="bg-background">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
