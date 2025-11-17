@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, Student, Professor, Project, Application, UserRole, ApplicationStatus } from './types';
 import { IcarusLogo, UserIcon, UploadIcon, CheckIcon, XIcon, Spinner, ProfessorIcon, LoginIcon } from './components/icons';
@@ -121,7 +122,11 @@ const App: React.FC = () => {
         }, 500);
     };
     
-    const handleSignup = (userData: Omit<Student & Professor, 'id'>) => {
+    // FIX: Changed userData type from an impossible intersection (`&`) to a union (`|`).
+    // The intersection `Student & Professor` is impossible because the `role` property
+    // cannot be both 'student' and 'professor' at the same time. The union correctly
+    // represents the data passed from the signup form.
+    const handleSignup = (userData: Omit<Student, 'id'> | Omit<Professor, 'id'>) => {
         setIsLoading(true);
         setTimeout(() => { // Simulate API call
             if(users.some(u => u.nusp === userData.nusp || u.email === userData.email)) {
@@ -162,6 +167,15 @@ const App: React.FC = () => {
                 postedDate: new Date().toLocaleDateString('pt-BR'),
             };
             setProjects(prev => [newProject, ...prev]);
+            setIsLoading(false);
+            handleNavigate('myProjects');
+        }, 1000);
+    };
+
+    const handleUpdateProject = (project: Project) => {
+        setIsLoading(true);
+        setTimeout(() => { // Simulate API call
+            setProjects(prev => prev.map(p => p.id === project.id ? project : p));
             setIsLoading(false);
             handleNavigate('myProjects');
         }, 1000);
@@ -297,8 +311,9 @@ const App: React.FC = () => {
         switch (view.name) {
             case 'login': return <LoginView onLogin={handleLogin} onNavigate={handleNavigate} error={error} isLoading={isLoading} />;
             case 'signup': return <SignupView onSignup={handleSignup} onNavigate={handleNavigate} error={error} isLoading={isLoading} />;
-            case 'myProjects': return <MyProjectsView projects={projects.filter(p => p.professorId === currentUser?.id)} onNavigate={handleNavigate} />;
-            case 'createProject': return <ProjectFormView onSubmit={handleCreateProject} isLoading={isLoading} />;
+            case 'myProjects': return <MyProjectsView projects={projects.filter(p => p.professorId === currentUser?.id)} onNavigate={handleNavigate} onEdit={(project) => handleNavigate('editProject', project)} />;
+            case 'createProject': return <ProjectFormView onSubmit={handleCreateProject} isLoading={isLoading} onNavigate={handleNavigate} />;
+            case 'editProject': return <ProjectFormView onSubmit={handleUpdateProject} projectToEdit={view.data} isLoading={isLoading} onNavigate={handleNavigate} />;
             case 'candidatures': 
                 const profApps = applications.filter(a => a.professorId === currentUser?.id);
                 return <CandidaturesView applications={profApps} projects={projects} users={users} onNavigate={handleNavigate} onSelect={handleConfirmSelection}/>;
@@ -308,7 +323,7 @@ const App: React.FC = () => {
             case 'myCurriculum': return <MyCurriculumView currentUser={currentUser as Student} onUpdate={handleUpdateCurriculum} isLoading={isLoading} />;
             case 'dashboard':
                 return currentUser?.role === UserRole.PROFESSOR 
-                    ? <MyProjectsView projects={projects.filter(p => p.professorId === currentUser.id)} onNavigate={handleNavigate} />
+                    ? <MyProjectsView projects={projects.filter(p => p.professorId === currentUser.id)} onNavigate={handleNavigate} onEdit={(project) => handleNavigate('editProject', project)} />
                     : <AvailableProjectsView projects={projects} onNavigate={handleNavigate}/>;
             default: return <LoginView onLogin={handleLogin} onNavigate={handleNavigate} error={error} isLoading={isLoading} />;
         }
@@ -328,6 +343,7 @@ const App: React.FC = () => {
 };
 
 // --- View Components ---
+const inputStyles = "w-full px-4 py-2 bg-light border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white transition-all";
 
 const LoginView = ({ onLogin, onNavigate, error, isLoading }: any) => {
     const [nusp, setNusp] = useState('');
@@ -345,11 +361,11 @@ const LoginView = ({ onLogin, onNavigate, error, isLoading }: any) => {
             <form onSubmit={e => { e.preventDefault(); onLogin(nusp, password); }} className="space-y-6">
                 <div>
                     <label className="block text-text-secondary mb-2 font-medium" htmlFor="nusp">NUSP ou email USP</label>
-                    <input type="text" id="nusp" value={nusp} onChange={e => setNusp(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary transition-shadow" />
+                    <input type="text" id="nusp" value={nusp} onChange={e => setNusp(e.target.value)} className={inputStyles} />
                 </div>
                 <div>
                     <label className="block text-text-secondary mb-2 font-medium" htmlFor="password">Senha</label>
-                    <input type="password" id="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary transition-shadow" />
+                    <input type="password" id="password" value={password} onChange={e => setPassword(e.target.value)} className={inputStyles} />
                 </div>
                 <button type="submit" disabled={isLoading} className="w-full bg-primary text-white py-3 rounded-lg hover:bg-primary-hover font-semibold transition-all duration-300 flex items-center justify-center disabled:bg-gray-400">
                     {isLoading ? <Spinner className="w-6 h-6 text-white"/> : 'Acessar'}
@@ -394,27 +410,27 @@ const SignupView = ({ onSignup, onNavigate, error, isLoading }: any) => {
             <p className="text-text-secondary text-center mb-6">Comece sua jornada acadêmica no ICarus</p>
             {error && <p className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</p>}
             <form onSubmit={handleSubmit} className="space-y-4">
-                <input type="text" placeholder="Nome Completo" value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
-                <input type="text" placeholder="NUSP" value={nusp} onChange={e => setNusp(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
-                <input type="email" placeholder="E-mail USP" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
-                <input type="password" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                <input type="text" placeholder="Nome Completo" value={name} onChange={e => setName(e.target.value)} className={inputStyles} required />
+                <input type="text" placeholder="NUSP" value={nusp} onChange={e => setNusp(e.target.value)} className={inputStyles} required />
+                <input type="email" placeholder="E-mail USP" value={email} onChange={e => setEmail(e.target.value)} className={inputStyles} required />
+                <input type="password" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} className={inputStyles} required />
                  
-                <select value={role} onChange={e => setRole(e.target.value as UserRole)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white">
+                <select value={role} onChange={e => setRole(e.target.value as UserRole)} className={`${inputStyles} bg-light`}>
                     <option value={UserRole.STUDENT}>Sou Aluno</option>
                     <option value={UserRole.PROFESSOR}>Sou Professor</option>
                 </select>
                 
                 {role === UserRole.STUDENT && (
                     <>
-                        <input type="text" placeholder="Curso" value={course} onChange={e => setCourse(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
-                        <input type="number" placeholder="Período Ideal" value={idealPeriod} onChange={e => setIdealPeriod(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                        <input type="text" placeholder="Curso" value={course} onChange={e => setCourse(e.target.value)} className={inputStyles} required />
+                        <input type="number" placeholder="Período Ideal" value={idealPeriod} onChange={e => setIdealPeriod(e.target.value)} className={inputStyles} required />
                     </>
                 )}
                 
                 {role === UserRole.PROFESSOR && (
                     <>
-                        <input type="text" placeholder="Faculdade (Ex: EP, FEA)" value={faculty} onChange={e => setFaculty(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
-                        <input type="text" placeholder="Departamento (Ex: PMR, PCS)" value={department} onChange={e => setDepartment(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                        <input type="text" placeholder="Faculdade (Ex: EP, FEA)" value={faculty} onChange={e => setFaculty(e.target.value)} className={inputStyles} required />
+                        <input type="text" placeholder="Departamento (Ex: PMR, PCS)" value={department} onChange={e => setDepartment(e.target.value)} className={inputStyles} required />
                     </>
                 )}
                 
@@ -429,7 +445,7 @@ const SignupView = ({ onSignup, onNavigate, error, isLoading }: any) => {
     );
 }
 
-const MyProjectsView = ({ projects, onNavigate }: { projects: Project[], onNavigate: (view: string, data?: any) => void }) => (
+const MyProjectsView = ({ projects, onNavigate, onEdit }: { projects: Project[], onNavigate: (view: string, data?: any) => void, onEdit: (project: Project) => void }) => (
     <div>
         <div className="flex justify-between items-center mb-8">
             <h1 className="text-4xl font-bold text-text-primary">Meus Projetos</h1>
@@ -442,9 +458,8 @@ const MyProjectsView = ({ projects, onNavigate }: { projects: Project[], onNavig
                         <tr>
                             <th className="p-4 font-semibold text-text-secondary uppercase text-sm">Título</th>
                             <th className="p-4 font-semibold text-text-secondary uppercase text-sm hidden md:table-cell">Área</th>
-                            <th className="p-4 font-semibold text-text-secondary uppercase text-sm hidden lg:table-cell">Duração</th>
-                            <th className="p-4 font-semibold text-text-secondary uppercase text-sm hidden md:table-cell">Bolsa</th>
                             <th className="p-4 font-semibold text-text-secondary uppercase text-sm hidden lg:table-cell">Vagas</th>
+                            <th className="p-4 font-semibold text-text-secondary uppercase text-sm">Ação</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -452,9 +467,10 @@ const MyProjectsView = ({ projects, onNavigate }: { projects: Project[], onNavig
                             <tr key={p.id} className="border-b border-gray-100 last:border-0 hover:bg-light transition-colors">
                                 <td className="p-4 font-semibold text-primary">{p.title}</td>
                                 <td className="p-4 text-text-primary hidden md:table-cell">{p.area}</td>
-                                <td className="p-4 text-text-primary hidden lg:table-cell">{p.duration}</td>
-                                <td className="p-4 text-text-primary hidden md:table-cell">{p.scholarshipDetails || 'Nenhuma'}</td>
                                 <td className="p-4 text-text-primary hidden lg:table-cell">{p.vacancies}</td>
+                                <td className="p-4">
+                                    <button onClick={() => onEdit(p)} className="text-primary hover:underline font-medium">Editar</button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -464,8 +480,19 @@ const MyProjectsView = ({ projects, onNavigate }: { projects: Project[], onNavig
     </div>
 );
 
-const ProjectFormView = ({ onSubmit, isLoading }: any) => {
-    const [formData, setFormData] = useState({ title: '', area: '', theme: '', duration: '', scholarshipDetails: '', keywords: '', vacancies: 1, description: '' });
+const ProjectFormView = ({ onSubmit, projectToEdit, isLoading, onNavigate }: any) => {
+    const isEditing = !!projectToEdit;
+    
+    const [formData, setFormData] = useState({
+        title: projectToEdit?.title || '',
+        area: projectToEdit?.area || '',
+        theme: projectToEdit?.theme || '',
+        duration: projectToEdit?.duration || '',
+        scholarshipDetails: projectToEdit?.scholarshipDetails || '',
+        keywords: projectToEdit?.keywords.join(', ') || '',
+        vacancies: projectToEdit?.vacancies || 1,
+        description: projectToEdit?.description || ''
+    });
     
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -479,51 +506,59 @@ const ProjectFormView = ({ onSubmit, isLoading }: any) => {
             vacancies: Number(formData.vacancies),
             hasScholarship: !!formData.scholarshipDetails,
         };
-        onSubmit(projectData);
+        
+        if (isEditing) {
+            onSubmit({ ...projectToEdit, ...projectData });
+        } else {
+            onSubmit(projectData);
+        }
     };
 
     return (
         <div className="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-lg border border-gray-100">
-            <h1 className="text-3xl font-bold text-text-primary mb-6 border-b border-gray-200 pb-4">Incluir Novo Projeto</h1>
+            <h1 className="text-3xl font-bold text-text-primary mb-6 border-b border-gray-200 pb-4">{isEditing ? 'Editar Projeto' : 'Incluir Novo Projeto'}</h1>
             <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid md:grid-cols-2 gap-6">
                     <div>
                         <label className="block text-text-secondary font-medium mb-1">Título*</label>
-                        <input name="title" onChange={handleChange} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                        <input name="title" value={formData.title} onChange={handleChange} className={inputStyles} required />
                     </div>
                      <div>
                         <label className="block text-text-secondary font-medium mb-1">Área de pesquisa*</label>
-                        <input name="area" onChange={handleChange} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                        <input name="area" value={formData.area} onChange={handleChange} className={inputStyles} required />
                     </div>
                     <div>
                         <label className="block text-text-secondary font-medium mb-1">Tema*</label>
-                        <input name="theme" onChange={handleChange} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                        <input name="theme" value={formData.theme} onChange={handleChange} className={inputStyles} required />
                     </div>
                      <div>
                         <label className="block text-text-secondary font-medium mb-1">Duração*</label>
-                        <input name="duration" onChange={handleChange} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                        <input name="duration" value={formData.duration} onChange={handleChange} className={inputStyles} required />
                     </div>
                 </div>
                  <div>
                     <label className="block text-text-secondary font-medium mb-1">Bolsa (Ex: CNPq - R$2.200, deixe em branco se não houver)</label>
-                    <input name="scholarshipDetails" onChange={handleChange} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+                    <input name="scholarshipDetails" value={formData.scholarshipDetails} onChange={handleChange} className={inputStyles} />
                 </div>
                 <div>
                     <label className="block text-text-secondary font-medium mb-1">Breve descrição*</label>
-                    <textarea name="description" value={formData.description} onChange={handleChange} rows={6} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                    <textarea name="description" value={formData.description} onChange={handleChange} rows={6} className={`${inputStyles} h-auto`} required />
                 </div>
                  <div>
                     <label className="block text-text-secondary font-medium mb-1">Palavras-chave* (separadas por vírgula)</label>
-                    <input name="keywords" onChange={handleChange} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                    <input name="keywords" value={formData.keywords} onChange={handleChange} className={inputStyles} required />
                 </div>
                 <div>
                     <label className="block text-text-secondary font-medium mb-1">Quantidade de Vagas*</label>
-                    <input name="vacancies" type="number" min="1" value={formData.vacancies} onChange={handleChange} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                    <input name="vacancies" type="number" min="0" value={formData.vacancies} onChange={handleChange} className={inputStyles} required />
                 </div>
 
-                <div className="flex justify-end pt-4 border-t border-gray-200">
+                <div className="flex justify-end pt-4 border-t border-gray-200 space-x-3">
+                     <button type="button" onClick={() => onNavigate('myProjects')} className="bg-gray-200 text-text-secondary px-8 py-3 rounded-lg hover:bg-gray-300 transition-colors font-semibold">
+                        Cancelar
+                     </button>
                      <button type="submit" disabled={isLoading} className="bg-primary text-white px-8 py-3 rounded-lg hover:bg-primary-hover transition-all duration-300 shadow hover:shadow-lg font-semibold flex items-center justify-center disabled:bg-gray-400">
-                        {isLoading ? <Spinner className="w-6 h-6 text-white"/> : 'Salvar Projeto'}
+                        {isLoading ? <Spinner className="w-6 h-6 text-white"/> : (isEditing ? 'Atualizar Projeto' : 'Salvar Projeto')}
                      </button>
                 </div>
             </form>
@@ -680,7 +715,7 @@ const ProjectDetailsView = ({ project, currentUser, applications, onApply, onNav
                                 <h3 className="font-semibold text-xl mb-3 text-text-primary">Candidatar-se</h3>
                                 <div className="mb-4">
                                     <label className="block text-text-secondary mb-2 font-medium">Motivação*</label>
-                                    <textarea value={motivation} onChange={e => setMotivation(e.target.value)} rows={5} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" required />
+                                    <textarea value={motivation} onChange={e => setMotivation(e.target.value)} rows={5} className={`${inputStyles} h-auto`} required />
                                 </div>
                                 <button type="submit" disabled={isLoading} className="w-full bg-primary text-white py-3 rounded-lg hover:bg-primary-hover font-semibold transition-all duration-300 flex items-center justify-center disabled:bg-gray-400">
                                     {isLoading ? <Spinner className="w-6 h-6 text-white"/> : 'Salvar Inscrição'}
@@ -707,6 +742,8 @@ const MyApplicationsView = ({ applications, projects, onStatusChange, onCancel }
         }
         return <span className={`px-2.5 py-1 text-xs rounded-full font-semibold ${styles[status]}`}>{status}</span>;
     }
+
+    const hasActions = applications.some((app: Application) => app.status === ApplicationStatus.PENDING || app.status === ApplicationStatus.SELECTED);
     
     return (
         <div>
@@ -720,7 +757,7 @@ const MyApplicationsView = ({ applications, projects, onStatusChange, onCancel }
                                 <th className="p-4 font-semibold text-text-secondary uppercase text-sm hidden md:table-cell">Professor</th>
                                 <th className="p-4 font-semibold text-text-secondary uppercase text-sm hidden lg:table-cell">Data de Inscrição</th>
                                 <th className="p-4 font-semibold text-text-secondary uppercase text-sm">Situação</th>
-                                <th className="p-4 font-semibold text-text-secondary uppercase text-sm">Ação</th>
+                                {hasActions && <th className="p-4 font-semibold text-text-secondary uppercase text-sm">Ação</th>}
                             </tr>
                         </thead>
                          <tbody>
@@ -732,19 +769,21 @@ const MyApplicationsView = ({ applications, projects, onStatusChange, onCancel }
                                         <td className="p-4 text-text-primary hidden md:table-cell">{project?.professorName}</td>
                                         <td className="p-4 text-text-primary hidden lg:table-cell">{app.applicationDate}</td>
                                         <td className="p-4">{renderStatusBadge(app.status)}</td>
-                                        <td className="p-4">
-                                            {app.status === ApplicationStatus.SELECTED && (
-                                                <div className="flex space-x-2">
-                                                    <button onClick={() => onStatusChange(app.id, ApplicationStatus.ACCEPTED)} className="flex items-center space-x-1.5 bg-green-500 text-white px-3 py-1.5 text-sm rounded-md hover:bg-green-600 transition-colors"><CheckIcon className="w-4 h-4" /> <span>Aceitar</span></button>
-                                                    <button onClick={() => onStatusChange(app.id, ApplicationStatus.DECLINED)} className="flex items-center space-x-1.5 bg-red-500 text-white px-3 py-1.5 text-sm rounded-md hover:bg-red-600 transition-colors"><XIcon className="w-4 h-4" /> <span>Recusar</span></button>
-                                                </div>
-                                            )}
-                                            {app.status === ApplicationStatus.PENDING && (
-                                                <button onClick={() => onCancel(app.id)} className="text-sm text-red-600 hover:underline font-medium">
-                                                    Excluir candidatura
-                                                </button>
-                                            )}
-                                        </td>
+                                        {hasActions && (
+                                            <td className="p-4">
+                                                {app.status === ApplicationStatus.SELECTED && (
+                                                    <div className="flex space-x-2">
+                                                        <button onClick={() => onStatusChange(app.id, ApplicationStatus.ACCEPTED)} className="flex items-center space-x-1.5 bg-green-500 text-white px-3 py-1.5 text-sm rounded-md hover:bg-green-600 transition-colors"><CheckIcon className="w-4 h-4" /> <span>Aceitar</span></button>
+                                                        <button onClick={() => onStatusChange(app.id, ApplicationStatus.DECLINED)} className="flex items-center space-x-1.5 bg-red-500 text-white px-3 py-1.5 text-sm rounded-md hover:bg-red-600 transition-colors"><XIcon className="w-4 h-4" /> <span>Recusar</span></button>
+                                                    </div>
+                                                )}
+                                                {app.status === ApplicationStatus.PENDING && (
+                                                    <button onClick={() => onCancel(app.id)} className="text-sm text-red-600 hover:underline font-medium">
+                                                        Excluir candidatura
+                                                    </button>
+                                                )}
+                                            </td>
+                                        )}
                                     </tr>
                                 )
                             })}
