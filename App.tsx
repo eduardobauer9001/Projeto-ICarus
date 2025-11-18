@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, Student, Professor, Project, Application, UserRole, ApplicationStatus } from './types';
-import { IcarusLogo, UserIcon, UploadIcon, CheckIcon, XIcon, Spinner, ProfessorIcon, LoginIcon, MenuIcon } from './components/icons';
+import { IcarusLogo, UploadIcon, CheckIcon, XIcon, Spinner, ProfessorIcon, LoginIcon, MenuIcon, StudentIcon } from './components/icons';
 import Modal from './components/Modal';
 
 // Mock Data
@@ -97,7 +97,7 @@ const Header: React.FC<{
                                  <div className="w-10 h-10 rounded-full border-2 border-white bg-white flex items-center justify-center text-primary">
                                     {currentUser.role === UserRole.PROFESSOR ? 
                                         <ProfessorIcon className="w-7 h-7" /> : 
-                                        <UserIcon className="w-7 h-7" />
+                                        <StudentIcon className="w-7 h-7" />
                                     }
                                 </div>
                                 <div className="text-white text-left">
@@ -132,7 +132,7 @@ const Header: React.FC<{
                          <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white shadow-md">
                             {currentUser.role === UserRole.PROFESSOR ? 
                                 <ProfessorIcon className="w-8 h-8" /> : 
-                                <UserIcon className="w-8 h-8" />
+                                <StudentIcon className="w-8 h-8" />
                             }
                         </div>
                         <div>
