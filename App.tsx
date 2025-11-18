@@ -93,18 +93,19 @@ const Header: React.FC<{
                                     <NavLink onClick={() => setView('myCurriculum')}>Meu Currículo</NavLink>
                                 </>
                             )}
-                            <div className="flex items-center space-x-3 pl-4 border-l border-blue-400">
-                                 <div className="w-10 h-10 rounded-full border-2 border-white bg-white flex items-center justify-center text-primary">
+                            <button onClick={() => setView('profile')} className="flex items-center space-x-3 pl-4 border-l border-blue-400 group focus:outline-none">
+                                 <div className="w-10 h-10 rounded-full border-2 border-white bg-white flex items-center justify-center text-primary group-hover:bg-blue-50 transition-colors">
                                     {currentUser.role === UserRole.PROFESSOR ? 
                                         <ProfessorIcon className="w-7 h-7" /> : 
                                         <StudentIcon className="w-7 h-7" />
                                     }
                                 </div>
                                 <div className="text-white text-left">
-                                    <div className="font-semibold text-sm">{currentUser.name}</div>
-                                    <button onClick={onLogout} className="text-xs text-blue-100 hover:text-white hover:underline">Sair</button>
+                                    <div className="font-semibold text-sm group-hover:underline">{currentUser.name}</div>
+                                    <span className="text-xs text-blue-100">Meus Dados</span>
                                 </div>
-                            </div>
+                            </button>
+                            <button onClick={onLogout} className="text-sm text-blue-100 hover:text-white hover:underline ml-2">Sair</button>
                         </>
                     ) : (
                          <button onClick={() => setView('login')} className="flex items-center space-x-2 text-white font-medium hover:text-gray-200 transition-colors">
@@ -140,6 +141,8 @@ const Header: React.FC<{
                             <p className="text-text-secondary text-sm">{currentUser.email}</p>
                         </div>
                     </div>
+
+                    <MobileNavLink onClick={() => handleMobileNav('profile')}>Meus Dados</MobileNavLink>
 
                     {currentUser.role === UserRole.PROFESSOR && (
                         <>
@@ -237,6 +240,27 @@ const App: React.FC = () => {
             setIsLoading(false);
         }, 500);
     }
+
+    const handleUpdateProfile = (updatedData: Partial<Student | Professor>) => {
+        if (!currentUser) return;
+
+        setIsLoading(true);
+        setTimeout(() => {
+            const updatedUser = { ...currentUser, ...updatedData } as User;
+            setUsers(prevUsers => prevUsers.map(u => u.id === currentUser.id ? updatedUser : u));
+            setCurrentUser(updatedUser);
+            setIsLoading(false);
+            openModal(
+                'Sucesso',
+                <div>
+                    <p>Seus dados foram atualizados com sucesso!</p>
+                    <div className="flex justify-end mt-6">
+                        <button onClick={closeModal} className="px-5 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors">OK</button>
+                    </div>
+                </div>
+            );
+        }, 800);
+    };
 
     const handleLogout = () => {
         setCurrentUser(null);
@@ -450,6 +474,12 @@ const App: React.FC = () => {
     };
 
     const renderView = () => {
+        // Security Guard: If no user is logged in, preventing rendering protected views
+        // This handles the race condition where currentUser is null but view hasn't updated to login yet
+        if (!currentUser && view.name !== 'login' && view.name !== 'signup') {
+             return <LoginView onLogin={handleLogin} onNavigate={handleNavigate} error={error} isLoading={isLoading} />;
+        }
+
         switch (view.name) {
             case 'login': return <LoginView onLogin={handleLogin} onNavigate={handleNavigate} error={error} isLoading={isLoading} />;
             case 'signup': return <SignupView onSignup={handleSignup} onNavigate={handleNavigate} error={error} isLoading={isLoading} />;
@@ -463,6 +493,7 @@ const App: React.FC = () => {
             case 'projectDetails': return <ProjectDetailsView project={view.data} currentUser={currentUser} applications={applications} onApply={handleApply} onNavigate={handleNavigate} isLoading={isLoading} />;
             case 'myApplications': return <MyApplicationsView applications={applications.filter(a => a.studentId === currentUser?.id)} projects={projects} onStatusChange={handleChangeAppStatus} onCancel={handleCancelApplication} />;
             case 'myCurriculum': return <MyCurriculumView currentUser={currentUser as Student} onUpdate={handleUpdateCurriculum} isLoading={isLoading} />;
+            case 'profile': return <ProfileView currentUser={currentUser!} onUpdate={handleUpdateProfile} isLoading={isLoading} />;
             case 'dashboard':
                 return currentUser?.role === UserRole.PROFESSOR 
                     ? <MyProjectsView projects={projects.filter(p => p.professorId === currentUser.id)} onNavigate={handleNavigate} onEdit={(project) => handleNavigate('editProject', project)} />
@@ -496,7 +527,7 @@ const LoginView = ({ onLogin, onNavigate, error, isLoading }: any) => {
                  <div className="inline-block">
                     <IcarusLogo />
                  </div>
-                <h2 className="text-3xl font-bold text-text-primary mt-4">Bem-vindo de volta</h2>
+                <h2 className="text-3xl font-bold text-text-primary mt-4">Bem-vindo</h2>
                 <p className="text-text-secondary mt-1">Faça login para continuar</p>
             </div>
             {error && <p className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</p>}
@@ -586,6 +617,107 @@ const SignupView = ({ onSignup, onNavigate, error, isLoading }: any) => {
         </div>
     );
 }
+
+const ProfileView = ({ currentUser, onUpdate, isLoading }: { currentUser: User, onUpdate: (data: any) => void, isLoading: boolean }) => {
+    const isStudent = currentUser.role === UserRole.STUDENT;
+    const [formData, setFormData] = useState({
+        name: currentUser.name,
+        nusp: currentUser.nusp,
+        email: currentUser.email,
+        // Student fields
+        course: isStudent ? (currentUser as Student).course : '',
+        idealPeriod: isStudent ? (currentUser as Student).idealPeriod : '',
+        // Professor fields
+        faculty: !isStudent ? (currentUser as Professor).faculty : '',
+        department: !isStudent ? (currentUser as Professor).department : '',
+    });
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setFormData({ ...formData, [e.target.name]: e.target.value });
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const updatedData: any = {
+            name: formData.name,
+            nusp: formData.nusp,
+            email: formData.email,
+        };
+
+        if (isStudent) {
+            updatedData.course = formData.course;
+            updatedData.idealPeriod = Number(formData.idealPeriod);
+        } else {
+            updatedData.faculty = formData.faculty;
+            updatedData.department = formData.department;
+        }
+
+        onUpdate(updatedData);
+    };
+
+    return (
+        <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-lg border border-gray-100">
+            <div className="flex items-center space-x-4 mb-6 border-b border-gray-200 pb-4">
+                <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white shadow-md">
+                    {isStudent ? <StudentIcon className="w-10 h-10" /> : <ProfessorIcon className="w-10 h-10" />}
+                </div>
+                <div>
+                    <h1 className="text-3xl font-bold text-text-primary">Meus Dados</h1>
+                    <p className="text-text-secondary">Atualize suas informações cadastrais</p>
+                </div>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+                <div className="grid md:grid-cols-2 gap-5">
+                    <div className="md:col-span-2">
+                         <label className="block text-text-secondary font-medium mb-1">Nome Completo</label>
+                         <input name="name" value={formData.name} onChange={handleChange} className={inputStyles} required />
+                    </div>
+                    <div>
+                        <label className="block text-text-secondary font-medium mb-1">NUSP</label>
+                        <input name="nusp" value={formData.nusp} onChange={handleChange} className={inputStyles} required />
+                    </div>
+                    <div>
+                         <label className="block text-text-secondary font-medium mb-1">E-mail</label>
+                         <input name="email" type="email" value={formData.email} onChange={handleChange} className={inputStyles} required />
+                    </div>
+                    
+                    {isStudent && (
+                        <>
+                            <div className="md:col-span-2">
+                                <label className="block text-text-secondary font-medium mb-1">Curso</label>
+                                <input name="course" value={formData.course} onChange={handleChange} className={inputStyles} required />
+                            </div>
+                             <div>
+                                <label className="block text-text-secondary font-medium mb-1">Período Ideal</label>
+                                <input name="idealPeriod" type="number" value={formData.idealPeriod} onChange={handleChange} className={inputStyles} required />
+                            </div>
+                        </>
+                    )}
+
+                    {!isStudent && (
+                        <>
+                             <div>
+                                <label className="block text-text-secondary font-medium mb-1">Faculdade (Ex: EP, FEA)</label>
+                                <input name="faculty" value={formData.faculty} onChange={handleChange} className={inputStyles} required />
+                            </div>
+                             <div>
+                                <label className="block text-text-secondary font-medium mb-1">Departamento</label>
+                                <input name="department" value={formData.department} onChange={handleChange} className={inputStyles} required />
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                <div className="pt-4">
+                    <button type="submit" disabled={isLoading} className="w-full bg-primary text-white py-3 rounded-lg hover:bg-primary-hover font-semibold transition-all duration-300 flex items-center justify-center disabled:bg-gray-400">
+                        {isLoading ? <Spinner className="w-6 h-6 text-white"/> : 'Salvar Alterações'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    );
+};
 
 const MyProjectsView = ({ projects, onNavigate, onEdit }: { projects: Project[], onNavigate: (view: string, data?: any) => void, onEdit: (project: Project) => void }) => (
     <div>
