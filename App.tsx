@@ -25,9 +25,15 @@ const MOCK_APPLICATIONS: Application[] = [];
 
 // --- Helper Components defined outside App to prevent re-renders ---
 
-const NavLink: React.FC<{onClick: () => void, children: React.ReactNode}> = ({ onClick, children }) => (
-    <button onClick={onClick} className="relative text-white font-medium group">
+const NavLink: React.FC<{onClick: () => void, children: React.ReactNode, hasNotification?: boolean}> = ({ onClick, children, hasNotification }) => (
+    <button onClick={onClick} className="relative text-white font-medium group flex items-center">
         {children}
+        {hasNotification && (
+            <span className="absolute -top-1 -right-2 flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+            </span>
+        )}
         <span className="absolute bottom-0 left-0 w-full h-0.5 bg-white scale-x-0 group-hover:scale-x-100 transition-transform origin-center duration-300"></span>
     </button>
 );
@@ -37,7 +43,8 @@ const Header: React.FC<{
   currentUser: User | null;
   onLogout: () => void;
   setView: (view: string, data?: any) => void;
-}> = ({ currentUser, onLogout, setView }) => {
+  notifications: { student: boolean, professor: boolean };
+}> = ({ currentUser, onLogout, setView, notifications }) => {
     return (
         <header className="bg-primary shadow-lg p-4 flex justify-between items-center sticky top-0 z-40">
             <button onClick={() => setView(currentUser ? 'dashboard' : 'login')}>
@@ -49,13 +56,13 @@ const Header: React.FC<{
                         {currentUser.role === UserRole.PROFESSOR && (
                             <>
                                 <NavLink onClick={() => setView('myProjects')}>Meus Projetos</NavLink>
-                                <NavLink onClick={() => setView('candidatures')}>Candidaturas</NavLink>
+                                <NavLink onClick={() => setView('candidatures')} hasNotification={notifications.professor}>Candidaturas</NavLink>
                             </>
                         )}
                         {currentUser.role === UserRole.STUDENT && (
                             <>
                                 <NavLink onClick={() => setView('availableProjects')}>Mural de IC's</NavLink>
-                                <NavLink onClick={() => setView('myApplications')}>Minhas Inscrições</NavLink>
+                                <NavLink onClick={() => setView('myApplications')} hasNotification={notifications.student}>Minhas Inscrições</NavLink>
                                 <NavLink onClick={() => setView('myCurriculum')}>Meu Currículo</NavLink>
                             </>
                         )}
@@ -100,6 +107,13 @@ const App: React.FC = () => {
     const [modalContent, setModalContent] = useState({ title: '', body: <></> });
     const [isLoading, setIsLoading] = useState(false);
 
+    // Notifications Logic
+    const hasStudentNotification = !!currentUser && currentUser.role === UserRole.STUDENT && 
+        applications.some(a => a.studentId === currentUser.id && (a.status === ApplicationStatus.SELECTED || a.status === ApplicationStatus.NOT_SELECTED) && !a.viewedByStudent);
+
+    const hasProfessorNotification = !!currentUser && currentUser.role === UserRole.PROFESSOR && 
+        applications.some(a => a.professorId === currentUser.id && (a.status === ApplicationStatus.PENDING || a.status === ApplicationStatus.ACCEPTED) && !a.viewedByProfessor);
+
     useEffect(() => {
         if (!currentUser) {
             setView({ name: 'login', data: null });
@@ -122,10 +136,6 @@ const App: React.FC = () => {
         }, 500);
     };
     
-    // FIX: Changed userData type from an impossible intersection (`&`) to a union (`|`).
-    // The intersection `Student & Professor` is impossible because the `role` property
-    // cannot be both 'student' and 'professor' at the same time. The union correctly
-    // represents the data passed from the signup form.
     const handleSignup = (userData: Omit<Student, 'id'> | Omit<Professor, 'id'>) => {
         setIsLoading(true);
         setTimeout(() => { // Simulate API call
@@ -148,6 +158,25 @@ const App: React.FC = () => {
     
     const handleNavigate = (viewName: string, data: any = null) => {
         setError('');
+        
+        // Mark notifications as read based on the view being accessed
+        if (currentUser) {
+            if (currentUser.role === UserRole.STUDENT && viewName === 'myApplications') {
+                setApplications(prev => prev.map(a => 
+                    a.studentId === currentUser.id && (a.status === ApplicationStatus.SELECTED || a.status === ApplicationStatus.NOT_SELECTED) && !a.viewedByStudent
+                    ? { ...a, viewedByStudent: true }
+                    : a
+                ));
+            }
+            if (currentUser.role === UserRole.PROFESSOR && viewName === 'candidatures') {
+                setApplications(prev => prev.map(a => 
+                    a.professorId === currentUser.id && (a.status === ApplicationStatus.PENDING || a.status === ApplicationStatus.ACCEPTED) && !a.viewedByProfessor
+                    ? { ...a, viewedByProfessor: true }
+                    : a
+                ));
+            }
+        }
+
         setView({ name: viewName, data });
     };
 
@@ -198,6 +227,8 @@ const App: React.FC = () => {
                 applicationDate: new Date().toLocaleDateString('pt-BR'),
                 motivation,
                 status: ApplicationStatus.PENDING,
+                viewedByProfessor: false,
+                viewedByStudent: true,
             };
             setApplications(prev => [...prev, newApp]);
             setIsLoading(false);
@@ -243,7 +274,7 @@ const App: React.FC = () => {
     const handleConfirmSelection = (appId: number, studentId: number, projectId: number) => {
         const confirmAction = () => {
             setApplications(apps => apps.map(app => 
-                app.id === appId ? { ...app, status: ApplicationStatus.SELECTED } : app
+                app.id === appId ? { ...app, status: ApplicationStatus.SELECTED, viewedByStudent: false } : app
             ));
             
             setProjects(projs => projs.map(proj => {
@@ -259,7 +290,7 @@ const App: React.FC = () => {
         openModal(
             'Confirmar Seleção',
             <div>
-                <p>Tem certeza que deseja selecionar este aluno? Um e-mail será enviado e a vaga será reservada.</p>
+                <p>Tem certeza que deseja selecionar este aluno? Uma vaga será reservada.</p>
                 <div className="flex justify-end space-x-3 mt-6">
                     <button onClick={closeModal} className="px-5 py-2 bg-gray-200 text-text-secondary rounded-lg hover:bg-gray-300 transition-colors">Cancelar</button>
                     <button onClick={confirmAction} className="px-5 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">Confirmar</button>
@@ -268,8 +299,33 @@ const App: React.FC = () => {
         );
     };
 
+    const handleRejectCandidate = (appId: number) => {
+        const rejectAction = () => {
+            setApplications(apps => apps.map(app => 
+                app.id === appId ? { ...app, status: ApplicationStatus.NOT_SELECTED, viewedByStudent: false } : app
+            ));
+            closeModal();
+            handleNavigate('candidatures');
+        };
+
+        openModal(
+            'Rejeitar Candidato',
+            <div>
+                <p>Tem certeza que deseja rejeitar esta candidatura? O aluno verá o status como "Não selecionado".</p>
+                <div className="flex justify-end space-x-3 mt-6">
+                    <button onClick={closeModal} className="px-5 py-2 bg-gray-200 text-text-secondary rounded-lg hover:bg-gray-300 transition-colors">Cancelar</button>
+                    <button onClick={rejectAction} className="px-5 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">Confirmar Rejeição</button>
+                </div>
+            </div>
+        );
+    };
+
     const handleChangeAppStatus = (appId: number, newStatus: ApplicationStatus) => {
-        setApplications(apps => apps.map(app => app.id === appId ? { ...app, status: newStatus } : app));
+        setApplications(apps => apps.map(app => 
+            app.id === appId 
+            ? { ...app, status: newStatus, viewedByProfessor: newStatus === ApplicationStatus.ACCEPTED ? false : app.viewedByProfessor } 
+            : app
+        ));
         if(newStatus === ApplicationStatus.DECLINED) {
             const app = applications.find(a => a.id === appId);
             if (app) {
@@ -316,7 +372,7 @@ const App: React.FC = () => {
             case 'editProject': return <ProjectFormView onSubmit={handleUpdateProject} projectToEdit={view.data} isLoading={isLoading} onNavigate={handleNavigate} />;
             case 'candidatures': 
                 const profApps = applications.filter(a => a.professorId === currentUser?.id);
-                return <CandidaturesView applications={profApps} projects={projects} users={users} onNavigate={handleNavigate} onSelect={handleConfirmSelection}/>;
+                return <CandidaturesView applications={profApps} projects={projects} users={users} onNavigate={handleNavigate} onSelect={handleConfirmSelection} onReject={handleRejectCandidate}/>;
             case 'availableProjects': return <AvailableProjectsView projects={projects} onNavigate={handleNavigate}/>;
             case 'projectDetails': return <ProjectDetailsView project={view.data} currentUser={currentUser} applications={applications} onApply={handleApply} onNavigate={handleNavigate} isLoading={isLoading} />;
             case 'myApplications': return <MyApplicationsView applications={applications.filter(a => a.studentId === currentUser?.id)} projects={projects} onStatusChange={handleChangeAppStatus} onCancel={handleCancelApplication} />;
@@ -331,7 +387,7 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-background text-text-primary">
-            <Header currentUser={currentUser} onLogout={handleLogout} setView={handleNavigate} />
+            <Header currentUser={currentUser} onLogout={handleLogout} setView={handleNavigate} notifications={{ student: hasStudentNotification, professor: hasProfessorNotification }} />
             <main className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto">
                 {renderView()}
             </main>
@@ -566,7 +622,7 @@ const ProjectFormView = ({ onSubmit, projectToEdit, isLoading, onNavigate }: any
     );
 };
 
-const CandidaturesView = ({ applications, projects, users, onNavigate, onSelect }: any) => {
+const CandidaturesView = ({ applications, projects, users, onNavigate, onSelect, onReject }: any) => {
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
     if (selectedProject) {
@@ -593,6 +649,14 @@ const CandidaturesView = ({ applications, projects, users, onNavigate, onSelect 
                                 {projectApps.map((app: Application) => {
                                     const student = users.find((s: User) => s.id === app.studentId) as Student | undefined;
                                     const curriculumUrl = student?.curriculum ? URL.createObjectURL(student.curriculum) : '#';
+                                    
+                                    const statusBadgeStyles: {[key: string]: string} = {
+                                        [ApplicationStatus.PENDING]: 'bg-yellow-100 text-yellow-800',
+                                        [ApplicationStatus.SELECTED]: 'bg-green-100 text-green-800',
+                                        [ApplicationStatus.NOT_SELECTED]: 'bg-red-100 text-red-800',
+                                        [ApplicationStatus.ACCEPTED]: 'bg-blue-100 text-blue-800',
+                                        [ApplicationStatus.DECLINED]: 'bg-gray-100 text-gray-800',
+                                    };
 
                                     return (
                                         <tr key={app.id} className="border-b border-gray-100 last:border-0 hover:bg-light transition-colors">
@@ -608,10 +672,13 @@ const CandidaturesView = ({ applications, projects, users, onNavigate, onSelect 
                                                     <span className="text-gray-500">Não enviado</span>
                                                 )}
                                             </td>
-                                            <td className="p-4"><span className={`px-2.5 py-1 text-xs rounded-full font-semibold ${app.status === ApplicationStatus.SELECTED ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{app.status}</span></td>
+                                            <td className="p-4"><span className={`px-2.5 py-1 text-xs rounded-full font-semibold ${statusBadgeStyles[app.status] || 'bg-gray-100 text-gray-800'}`}>{app.status}</span></td>
                                             <td className="p-4">
                                                 {app.status === ApplicationStatus.PENDING && student && (
-                                                    <button onClick={() => onSelect(app.id, student.id, selectedProject.id)} className="bg-green-500 text-white px-4 py-1.5 text-sm rounded-md hover:bg-green-600 transition-colors">Selecionar</button>
+                                                    <div className="flex space-x-2">
+                                                        <button onClick={() => onSelect(app.id, student.id, selectedProject.id)} className="bg-green-500 text-white px-4 py-1.5 text-sm rounded-md hover:bg-green-600 transition-colors">Selecionar</button>
+                                                        <button onClick={() => onReject(app.id)} className="bg-red-500 text-white px-4 py-1.5 text-sm rounded-md hover:bg-red-600 transition-colors">Rejeitar</button>
+                                                    </div>
                                                 )}
                                             </td>
                                         </tr>

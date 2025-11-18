@@ -61,4 +61,6 @@ export interface Application {
   applicationDate: string;
   motivation: string;
   status: ApplicationStatus;
+  viewedByStudent: boolean;
+  viewedByProfessor: boolean;
 }
