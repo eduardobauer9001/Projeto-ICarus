@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, Student, Professor, Project, Application, UserRole, ApplicationStatus } from './types';
-import { IcarusLogo, UserIcon, UploadIcon, CheckIcon, XIcon, Spinner, ProfessorIcon, LoginIcon } from './components/icons';
+import { IcarusLogo, UserIcon, UploadIcon, CheckIcon, XIcon, Spinner, ProfessorIcon, LoginIcon, MenuIcon } from './components/icons';
 import Modal from './components/Modal';
 
 // Mock Data
@@ -38,6 +38,18 @@ const NavLink: React.FC<{onClick: () => void, children: React.ReactNode, hasNoti
     </button>
 );
 
+const MobileNavLink: React.FC<{onClick: () => void, children: React.ReactNode, hasNotification?: boolean}> = ({ onClick, children, hasNotification }) => (
+    <button onClick={onClick} className="block w-full text-left px-6 py-4 text-text-primary font-medium hover:bg-gray-50 border-l-4 border-transparent hover:border-primary transition-all relative flex items-center justify-between">
+        <span className="text-base">{children}</span>
+        {hasNotification && (
+            <span className="flex h-3 w-3 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+            </span>
+        )}
+    </button>
+);
+
 
 const Header: React.FC<{
   currentUser: User | null;
@@ -45,47 +57,121 @@ const Header: React.FC<{
   setView: (view: string, data?: any) => void;
   notifications: { student: boolean, professor: boolean };
 }> = ({ currentUser, onLogout, setView, notifications }) => {
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+    const handleMobileNav = (viewName: string) => {
+        setView(viewName);
+        setIsMobileMenuOpen(false);
+    };
+
+    const handleLogout = () => {
+        onLogout();
+        setIsMobileMenuOpen(false);
+    }
+
     return (
-        <header className="bg-primary shadow-lg p-4 flex justify-between items-center sticky top-0 z-40">
-            <button onClick={() => setView(currentUser ? 'dashboard' : 'login')}>
-                <IcarusLogo textColor="text-white"/>
-            </button>
-            <nav className="flex items-center space-x-8">
-                {currentUser ? (
-                    <>
-                        {currentUser.role === UserRole.PROFESSOR && (
-                            <>
-                                <NavLink onClick={() => setView('myProjects')}>Meus Projetos</NavLink>
-                                <NavLink onClick={() => setView('candidatures')} hasNotification={notifications.professor}>Candidaturas</NavLink>
-                            </>
-                        )}
-                        {currentUser.role === UserRole.STUDENT && (
-                            <>
-                                <NavLink onClick={() => setView('availableProjects')}>Mural de IC's</NavLink>
-                                <NavLink onClick={() => setView('myApplications')} hasNotification={notifications.student}>Minhas Inscrições</NavLink>
-                                <NavLink onClick={() => setView('myCurriculum')}>Meu Currículo</NavLink>
-                            </>
-                        )}
-                        <div className="flex items-center space-x-3">
-                             <div className="w-10 h-10 rounded-full border-2 border-white bg-white flex items-center justify-center text-primary">
-                                {currentUser.role === UserRole.PROFESSOR ? 
-                                    <ProfessorIcon className="w-7 h-7" /> : 
-                                    <UserIcon className="w-7 h-7" />
-                                }
+        <header className="bg-primary shadow-lg sticky top-0 z-40">
+            <div className="p-4 flex justify-between items-center max-w-7xl mx-auto relative z-50 bg-primary">
+                <button onClick={() => { setView(currentUser ? 'dashboard' : 'login'); setIsMobileMenuOpen(false); }}>
+                    <IcarusLogo textColor="text-white"/>
+                </button>
+                
+                {/* Desktop Navigation - Hidden on Mobile/Small Tablet */}
+                <nav className="hidden md:flex items-center space-x-8">
+                    {currentUser ? (
+                        <>
+                            {currentUser.role === UserRole.PROFESSOR && (
+                                <>
+                                    <NavLink onClick={() => setView('myProjects')}>Meus Projetos</NavLink>
+                                    <NavLink onClick={() => setView('candidatures')} hasNotification={notifications.professor}>Candidaturas</NavLink>
+                                </>
+                            )}
+                            {currentUser.role === UserRole.STUDENT && (
+                                <>
+                                    <NavLink onClick={() => setView('availableProjects')}>Mural de IC's</NavLink>
+                                    <NavLink onClick={() => setView('myApplications')} hasNotification={notifications.student}>Minhas Inscrições</NavLink>
+                                    <NavLink onClick={() => setView('myCurriculum')}>Meu Currículo</NavLink>
+                                </>
+                            )}
+                            <div className="flex items-center space-x-3 pl-4 border-l border-blue-400">
+                                 <div className="w-10 h-10 rounded-full border-2 border-white bg-white flex items-center justify-center text-primary">
+                                    {currentUser.role === UserRole.PROFESSOR ? 
+                                        <ProfessorIcon className="w-7 h-7" /> : 
+                                        <UserIcon className="w-7 h-7" />
+                                    }
+                                </div>
+                                <div className="text-white text-left">
+                                    <div className="font-semibold text-sm">{currentUser.name}</div>
+                                    <button onClick={onLogout} className="text-xs text-blue-100 hover:text-white hover:underline">Sair</button>
+                                </div>
                             </div>
-                            <div className="text-white text-left">
-                                <div className="font-semibold">{currentUser.name}</div>
-                                <button onClick={onLogout} className="text-sm text-gray-200 hover:underline">Sair</button>
-                            </div>
-                        </div>
-                    </>
-                ) : (
-                     <button onClick={() => setView('login')} className="flex items-center space-x-2 text-white font-medium hover:text-gray-200 transition-colors">
-                        <span>Login</span>
-                        <LoginIcon className="w-6 h-6" />
+                        </>
+                    ) : (
+                         <button onClick={() => setView('login')} className="flex items-center space-x-2 text-white font-medium hover:text-gray-200 transition-colors">
+                            <span>Login</span>
+                            <LoginIcon className="w-6 h-6" />
+                        </button>
+                    )}
+                </nav>
+
+                {/* Mobile Menu Button - Visible only on Mobile/Small Tablet */}
+                {currentUser && (
+                    <button 
+                        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+                        className="md:hidden text-white focus:outline-none p-2"
+                    >
+                        {isMobileMenuOpen ? <XIcon className="w-7 h-7" /> : <MenuIcon className="w-7 h-7" />}
                     </button>
                 )}
-            </nav>
+            </div>
+
+            {/* Mobile Dropdown Menu */}
+            {currentUser && isMobileMenuOpen && (
+                <div className="md:hidden bg-white absolute top-full left-0 w-full shadow-xl border-t border-gray-100 animate-fadeIn z-40 flex flex-col pb-4">
+                    <div className="bg-gray-50 p-6 flex items-center space-x-4 border-b border-gray-200 mb-2">
+                         <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white shadow-md">
+                            {currentUser.role === UserRole.PROFESSOR ? 
+                                <ProfessorIcon className="w-8 h-8" /> : 
+                                <UserIcon className="w-8 h-8" />
+                            }
+                        </div>
+                        <div>
+                            <p className="font-bold text-text-primary text-lg">{currentUser.name}</p>
+                            <p className="text-text-secondary text-sm">{currentUser.email}</p>
+                        </div>
+                    </div>
+
+                    {currentUser.role === UserRole.PROFESSOR && (
+                        <>
+                            <MobileNavLink onClick={() => handleMobileNav('myProjects')}>Meus Projetos</MobileNavLink>
+                            <MobileNavLink onClick={() => handleMobileNav('candidatures')} hasNotification={notifications.professor}>Candidaturas</MobileNavLink>
+                        </>
+                    )}
+                    {currentUser.role === UserRole.STUDENT && (
+                        <>
+                            <MobileNavLink onClick={() => handleMobileNav('availableProjects')}>Mural de IC's</MobileNavLink>
+                            <MobileNavLink onClick={() => handleMobileNav('myApplications')} hasNotification={notifications.student}>Minhas Inscrições</MobileNavLink>
+                            <MobileNavLink onClick={() => handleMobileNav('myCurriculum')}>Meu Currículo</MobileNavLink>
+                        </>
+                    )}
+                    
+                    <div className="border-t border-gray-100 mt-2 pt-2">
+                        <button 
+                            onClick={handleLogout} 
+                            className="w-full text-left px-6 py-4 text-red-600 font-medium hover:bg-red-50 flex items-center space-x-2"
+                        >
+                            <LoginIcon className="w-5 h-5 rotate-180" />
+                            <span>Sair da conta</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+             <style>{`
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(-10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+            `}</style>
         </header>
     );
 };
