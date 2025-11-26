@@ -4,7 +4,7 @@ import { User, Student, Professor, Project, Application, UserRole, ApplicationSt
 import { IcarusLogo, UploadIcon, CheckIcon, XIcon, Spinner, ProfessorIcon, LoginIcon, MenuIcon, StudentIcon } from './components/icons';
 import Modal from './components/Modal';
 
-// Mock Data
+// Mock Data (Initial Data)
 const MOCK_PROFESSORS: Professor[] = [
   { id: 1, nusp: '12345', name: 'Prof. Chinam', email: 'chinam@usp.br', role: UserRole.PROFESSOR, faculty: 'EP', department: 'PMR', password: '123' },
 ];
@@ -182,14 +182,34 @@ const Header: React.FC<{
 // --- Main App Component ---
 
 const App: React.FC = () => {
+    // --- Local Storage Initialization Helpers ---
+    const getInitialUsers = () => {
+        const saved = localStorage.getItem('icarus_users');
+        return saved ? JSON.parse(saved) : [...MOCK_PROFESSORS, ...MOCK_STUDENTS];
+    };
+    const getInitialProjects = () => {
+        const saved = localStorage.getItem('icarus_projects');
+        return saved ? JSON.parse(saved) : MOCK_PROJECTS;
+    };
+    const getInitialApplications = () => {
+        const saved = localStorage.getItem('icarus_applications');
+        return saved ? JSON.parse(saved) : MOCK_APPLICATIONS;
+    };
+
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [view, setView] = useState<{ name: string; data: any }>({ name: 'login', data: null });
     
-    // Mock DB State
-    const [users, setUsers] = useState<User[]>([...MOCK_PROFESSORS, ...MOCK_STUDENTS]);
-    const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
-    const [applications, setApplications] = useState<Application[]>(MOCK_APPLICATIONS);
+    // DB State with Persistence
+    const [users, setUsers] = useState<User[]>(getInitialUsers);
+    const [projects, setProjects] = useState<Project[]>(getInitialProjects);
+    const [applications, setApplications] = useState<Application[]>(getInitialApplications);
     
+    // Persistence Effects
+    useEffect(() => { localStorage.setItem('icarus_users', JSON.stringify(users)); }, [users]);
+    useEffect(() => { localStorage.setItem('icarus_projects', JSON.stringify(projects)); }, [projects]);
+    useEffect(() => { localStorage.setItem('icarus_applications', JSON.stringify(applications)); }, [applications]);
+
+
     // UI State
     const [error, setError] = useState<string>('');
     const [isModalOpen, setIsModalOpen] = useState(false);
