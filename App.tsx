@@ -452,6 +452,23 @@ const App: React.FC = () => {
     // File upload is simulated by converting to Base64 to store in Firestore for simplicity
     const handleUpdateCurriculum = (file: File) => {
         if (!currentUser || currentUser.role !== UserRole.STUDENT) return;
+        
+        // Firestore limit check (approx 900KB safe margin for 1MB limit)
+        if (file.size > 900 * 1024) { 
+            openModal(
+                'Arquivo muito grande',
+                <div>
+                    <p className="text-red-600 font-medium">O arquivo excede o limite permitido.</p>
+                    <p className="mt-2 text-sm text-text-secondary">Para manter o serviço gratuito e rápido, limitamos os currículos a <strong>900KB</strong>.</p>
+                    <p className="mt-1 text-sm text-text-secondary">Por favor, comprima seu PDF ou tente outro arquivo.</p>
+                    <div className="flex justify-end mt-6">
+                        <button onClick={closeModal} className="px-5 py-2 bg-gray-200 text-text-secondary rounded-lg hover:bg-gray-300 transition-colors">Fechar</button>
+                    </div>
+                </div>
+            );
+            return;
+        }
+
         setIsLoading(true);
         
         const reader = new FileReader();
