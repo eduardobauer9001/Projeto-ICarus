@@ -5,19 +5,19 @@ export enum UserRole {
 }
 
 export interface User {
-  id: number;
+  id: string; // Firebase IDs are strings
   nusp: string;
   name: string;
   email: string;
   role: UserRole;
-  password?: string; // Should not be sent to frontend in real app
+  // Password is handled by Firebase Auth
 }
 
 export interface Student extends User {
   role: UserRole.STUDENT;
   course: string;
   idealPeriod: number;
-  curriculum?: File;
+  curriculumBase64?: string; // Storing as Base64 string for Firestore simplicity
   curriculumFileName?: string;
 }
 
@@ -28,9 +28,9 @@ export interface Professor extends User {
 }
 
 export interface Project {
-  id: number;
+  id: string;
   title: string;
-  professorId: number;
+  professorId: string;
   professorName: string;
   area: string;
   theme: string;
@@ -54,10 +54,10 @@ export enum ApplicationStatus {
 }
 
 export interface Application {
-  id: number;
-  studentId: number;
-  projectId: number;
-  professorId: number;
+  id: string;
+  studentId: string;
+  projectId: string;
+  professorId: string;
   applicationDate: string;
   motivation: string;
   status: ApplicationStatus;

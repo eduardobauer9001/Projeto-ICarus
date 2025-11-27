@@ -4,23 +4,26 @@ import { User, Student, Professor, Project, Application, UserRole, ApplicationSt
 import { IcarusLogo, UploadIcon, CheckIcon, XIcon, Spinner, ProfessorIcon, LoginIcon, MenuIcon, StudentIcon } from './components/icons';
 import Modal from './components/Modal';
 
-// Mock Data (Initial Data)
-const MOCK_PROFESSORS: Professor[] = [
-  { id: 1, nusp: '12345', name: 'Prof. Chinam', email: 'chinam@usp.br', role: UserRole.PROFESSOR, faculty: 'EP', department: 'PMR', password: '123' },
-];
-
-const MOCK_STUDENTS: Student[] = [
-  { id: 2, nusp: '54321', name: 'Aluno Fulano', email: 'fulano@usp.br', role: UserRole.STUDENT, course: 'Engenharia Mecatrônica', idealPeriod: 7, password: '123' },
-];
-
-const MOCK_PROJECTS: Project[] = [
-  { id: 1, title: 'Energia Solar', professorId: 1, professorName: 'Prof. Chinam', area: 'Engenharia', theme: 'Inovação e energia', duration: '24 meses', hasScholarship: true, scholarshipDetails: 'CNPq - R$2.200', faculty: 'EP', department: 'PMR', keywords: ['Energia limpa', 'Solar'], vacancies: 2, description: 'Desenvolvimento de novas tecnologias para painéis solares.', postedDate: '21/03/2025' },
-  { id: 2, title: 'Startup Biotecnologia', professorId: 1, professorName: 'Prof. Chinam', area: 'Direito', theme: 'Regulação jurídica', duration: '18 meses', hasScholarship: false, faculty: 'FEA', department: 'Direito', keywords: ['Biotecnologia', 'Startup'], vacancies: 1, description: 'Análise jurídica para startups de biotecnologia.', postedDate: '22/03/2025' },
-  { id: 3, title: 'IA para Robótica', professorId: 1, professorName: 'Prof. Chinam', area: 'Computação', theme: 'Inteligência Artificial', duration: '12 meses', hasScholarship: true, scholarshipDetails: 'FAPESP - R$1.800', faculty: 'EP', department: 'PCS', keywords: ['IA', 'Robótica'], vacancies: 0, description: 'Aplicação de algoritmos de aprendizado de máquina em robôs autônomos.', postedDate: '20/03/2025' },
-
-];
-
-const MOCK_APPLICATIONS: Application[] = [];
+// Firebase Imports
+import { auth, db } from './services/firebase';
+import { 
+    signInWithEmailAndPassword, 
+    createUserWithEmailAndPassword, 
+    signOut, 
+    onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+    collection, 
+    addDoc, 
+    updateDoc, 
+    doc, 
+    getDoc, 
+    setDoc, 
+    onSnapshot,
+    query, 
+    where,
+    deleteDoc
+} from 'firebase/firestore';
 
 
 // --- Helper Components defined outside App to prevent re-renders ---
@@ -182,39 +185,85 @@ const Header: React.FC<{
 // --- Main App Component ---
 
 const App: React.FC = () => {
-    // --- Local Storage Initialization Helpers ---
-    const getInitialUsers = () => {
-        const saved = localStorage.getItem('icarus_users');
-        return saved ? JSON.parse(saved) : [...MOCK_PROFESSORS, ...MOCK_STUDENTS];
-    };
-    const getInitialProjects = () => {
-        const saved = localStorage.getItem('icarus_projects');
-        return saved ? JSON.parse(saved) : MOCK_PROJECTS;
-    };
-    const getInitialApplications = () => {
-        const saved = localStorage.getItem('icarus_applications');
-        return saved ? JSON.parse(saved) : MOCK_APPLICATIONS;
-    };
-
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [view, setView] = useState<{ name: string; data: any }>({ name: 'login', data: null });
     
-    // DB State with Persistence
-    const [users, setUsers] = useState<User[]>(getInitialUsers);
-    const [projects, setProjects] = useState<Project[]>(getInitialProjects);
-    const [applications, setApplications] = useState<Application[]>(getInitialApplications);
+    // Application Data State
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [applications, setApplications] = useState<Application[]>([]);
+    const [usersCache, setUsersCache] = useState<User[]>([]); // Cache for displaying names in tables
     
-    // Persistence Effects
-    useEffect(() => { localStorage.setItem('icarus_users', JSON.stringify(users)); }, [users]);
-    useEffect(() => { localStorage.setItem('icarus_projects', JSON.stringify(projects)); }, [projects]);
-    useEffect(() => { localStorage.setItem('icarus_applications', JSON.stringify(applications)); }, [applications]);
-
-
     // UI State
     const [error, setError] = useState<string>('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalContent, setModalContent] = useState({ title: '', body: <></> });
     const [isLoading, setIsLoading] = useState(false);
+    const [isAuthChecking, setIsAuthChecking] = useState(true);
+
+    // --- Firebase Listeners ---
+
+    // 1. Auth Listener
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // Fetch user details from Firestore
+                const userDoc = await getDoc(doc(db, "users", user.uid));
+                if (userDoc.exists()) {
+                    setCurrentUser(userDoc.data() as User);
+                    if (view.name === 'login' || view.name === 'signup') {
+                        setView({ name: 'dashboard', data: null });
+                    }
+                } else {
+                    // Fallback if auth exists but no doc (shouldn't happen with correct signup)
+                    setError("Erro: Usuário não encontrado no banco de dados.");
+                    signOut(auth);
+                }
+            } else {
+                setCurrentUser(null);
+                setView({ name: 'login', data: null });
+            }
+            setIsAuthChecking(false);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    // 2. Data Listeners (Real-time updates)
+    useEffect(() => {
+        if (!currentUser) {
+            setProjects([]);
+            setApplications([]);
+            return;
+        }
+
+        const qProjects = query(collection(db, "projects"));
+        const unsubProjects = onSnapshot(qProjects, (snapshot) => {
+            const projs: Project[] = [];
+            snapshot.forEach((doc) => projs.push({ ...doc.data(), id: doc.id } as Project));
+            setProjects(projs);
+        });
+
+        const qApps = query(collection(db, "applications"));
+        const unsubApps = onSnapshot(qApps, (snapshot) => {
+            const apps: Application[] = [];
+            snapshot.forEach((doc) => apps.push({ ...doc.data(), id: doc.id } as Application));
+            setApplications(apps);
+        });
+
+        // Also fetch all users to display names in tables (simple caching)
+        const qUsers = query(collection(db, "users"));
+        const unsubUsers = onSnapshot(qUsers, (snapshot) => {
+            const u: User[] = [];
+            snapshot.forEach((doc) => u.push({ ...doc.data(), id: doc.id } as User));
+            setUsersCache(u);
+        });
+
+        return () => {
+            unsubProjects();
+            unsubApps();
+            unsubUsers();
+        };
+    }, [currentUser]);
+
 
     // Notifications Logic
     const hasStudentNotification = !!currentUser && currentUser.role === UserRole.STUDENT && 
@@ -223,53 +272,65 @@ const App: React.FC = () => {
     const hasProfessorNotification = !!currentUser && currentUser.role === UserRole.PROFESSOR && 
         applications.some(a => a.professorId === currentUser.id && (a.status === ApplicationStatus.PENDING || a.status === ApplicationStatus.ACCEPTED) && !a.viewedByProfessor);
 
-    useEffect(() => {
-        if (!currentUser) {
-            setView({ name: 'login', data: null });
-        } else {
-            setView({ name: 'dashboard', data: null });
-        }
-    }, [currentUser]);
 
-    const handleLogin = (nusp: string, pass: string) => {
+    // --- Actions ---
+
+    const handleLogin = async (emailInput: string, pass: string) => {
         setIsLoading(true);
-        setTimeout(() => { // Simulate API call
-            const user = users.find(u => u.nusp === nusp && u.password === pass);
-            if (user) {
-                setCurrentUser(user);
-                setError('');
+        setError('');
+        try {
+            await signInWithEmailAndPassword(auth, emailInput, pass);
+            // Auth listener will handle the rest
+        } catch (err: any) {
+            console.error(err);
+            if (err.code === 'auth/invalid-credential') {
+                setError('E-mail ou senha incorretos.');
             } else {
-                setError('NUSP ou senha inválidos.');
+                setError('Erro ao fazer login. Tente novamente.');
             }
+        } finally {
             setIsLoading(false);
-        }, 500);
+        }
     };
     
-    const handleSignup = (userData: Omit<Student, 'id'> | Omit<Professor, 'id'>) => {
+    const handleSignup = async (userData: any) => {
         setIsLoading(true);
-        setTimeout(() => { // Simulate API call
-            if(users.some(u => u.nusp === userData.nusp || u.email === userData.email)) {
-                 setError('NUSP ou E-mail já cadastrado.');
-                 setIsLoading(false);
-                 return;
+        setError('');
+        try {
+            // 1. Create Auth User
+            const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
+            const uid = userCredential.user.uid;
+
+            // 2. Create Firestore Doc
+            const { password, ...firestoreData } = userData; // Don't store password in Firestore
+            const newUser = { ...firestoreData, id: uid };
+            
+            await setDoc(doc(db, "users", uid), newUser);
+            
+            // Auth listener will catch the login and redirect
+        } catch (err: any) {
+            console.error(err);
+            if (err.code === 'auth/email-already-in-use') {
+                setError('Este e-mail já está cadastrado.');
+            } else {
+                setError('Erro ao criar conta: ' + err.message);
             }
-            const newUser = { ...userData, id: users.length + 1 };
-            setUsers(prev => [...prev, newUser]);
-            setCurrentUser(newUser as User);
-            setError('');
+        } finally {
             setIsLoading(false);
-        }, 500);
+        }
     }
 
-    const handleUpdateProfile = (updatedData: Partial<Student | Professor>) => {
+    const handleUpdateProfile = async (updatedData: Partial<Student | Professor>) => {
         if (!currentUser) return;
-
         setIsLoading(true);
-        setTimeout(() => {
-            const updatedUser = { ...currentUser, ...updatedData } as User;
-            setUsers(prevUsers => prevUsers.map(u => u.id === currentUser.id ? updatedUser : u));
-            setCurrentUser(updatedUser);
-            setIsLoading(false);
+        try {
+            const userRef = doc(db, "users", currentUser.id);
+            await updateDoc(userRef, updatedData);
+            
+            // Manually update local state for immediate feedback if needed, 
+            // though the auth listener might trigger a refresh
+            setCurrentUser({ ...currentUser, ...updatedData } as User);
+
             openModal(
                 'Sucesso',
                 <div>
@@ -279,78 +340,95 @@ const App: React.FC = () => {
                     </div>
                 </div>
             );
-        }, 800);
+        } catch (err) {
+            console.error(err);
+            setError('Falha ao atualizar perfil.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleLogout = () => {
+        signOut(auth);
         setCurrentUser(null);
     };
     
-    const handleNavigate = (viewName: string, data: any = null) => {
+    const handleNavigate = async (viewName: string, data: any = null) => {
         setError('');
         
-        // Mark notifications as read based on the view being accessed
+        // Mark notifications as read in Firestore
         if (currentUser) {
             if (currentUser.role === UserRole.STUDENT && viewName === 'myApplications') {
-                setApplications(prev => prev.map(a => 
+                const unreadApps = applications.filter(a => 
                     a.studentId === currentUser.id && (a.status === ApplicationStatus.SELECTED || a.status === ApplicationStatus.NOT_SELECTED) && !a.viewedByStudent
-                    ? { ...a, viewedByStudent: true }
-                    : a
-                ));
+                );
+                unreadApps.forEach(async (app) => {
+                    await updateDoc(doc(db, "applications", app.id), { viewedByStudent: true });
+                });
             }
             if (currentUser.role === UserRole.PROFESSOR && viewName === 'candidatures') {
-                setApplications(prev => prev.map(a => 
+                const unreadApps = applications.filter(a => 
                     a.professorId === currentUser.id && (a.status === ApplicationStatus.PENDING || a.status === ApplicationStatus.ACCEPTED) && !a.viewedByProfessor
-                    ? { ...a, viewedByProfessor: true }
-                    : a
-                ));
+                );
+                unreadApps.forEach(async (app) => {
+                     await updateDoc(doc(db, "applications", app.id), { viewedByProfessor: true });
+                });
             }
         }
 
         setView({ name: viewName, data });
     };
 
-    const handleCreateProject = (project: Omit<Project, 'id' | 'professorId' | 'professorName' | 'postedDate' | 'faculty' | 'department'>) => {
+    const handleCreateProject = async (projectData: Omit<Project, 'id' | 'professorId' | 'professorName' | 'postedDate' | 'faculty' | 'department'>) => {
         if (!currentUser || currentUser.role !== UserRole.PROFESSOR) return;
         
         setIsLoading(true);
-        setTimeout(() => { // Simulate API call
+        try {
             const professor = currentUser as Professor;
-            const newProject: Project = {
-                ...project,
-                id: projects.length + 1,
+            const newProject = {
+                ...projectData,
                 professorId: currentUser.id,
                 professorName: currentUser.name,
                 faculty: professor.faculty,
                 department: professor.department,
                 postedDate: new Date().toLocaleDateString('pt-BR'),
             };
-            setProjects(prev => [newProject, ...prev]);
-            setIsLoading(false);
+            
+            await addDoc(collection(db, "projects"), newProject);
             handleNavigate('myProjects');
-        }, 1000);
+        } catch (err) {
+            console.error(err);
+            setError("Erro ao criar projeto.");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleUpdateProject = (project: Project) => {
+    const handleUpdateProject = async (project: Project) => {
         setIsLoading(true);
-        setTimeout(() => { // Simulate API call
-            setProjects(prev => prev.map(p => p.id === project.id ? project : p));
-            setIsLoading(false);
+        try {
+            const projectRef = doc(db, "projects", project.id);
+            // Remove id from the data being updated
+            const { id, ...dataToUpdate } = project;
+            await updateDoc(projectRef, dataToUpdate);
             handleNavigate('myProjects');
-        }, 1000);
+        } catch (err) {
+            console.error(err);
+            setError("Erro ao atualizar projeto.");
+        } finally {
+             setIsLoading(false);
+        }
     };
 
-    const handleApply = (projectId: number, motivation: string) => {
+    const handleApply = async (projectId: string, motivation: string) => {
+        if (!currentUser || currentUser.role !== UserRole.STUDENT) return;
+
         setIsLoading(true);
-        setTimeout(() => { // Simulate API call
+        try {
             const project = projects.find(p => p.id === projectId);
-            if (!currentUser || currentUser.role !== UserRole.STUDENT || !project) {
-                setIsLoading(false);
-                return;
-            }
+            if (!project) throw new Error("Projeto não encontrado");
     
-            const newApp: Application = {
-                id: applications.length + 1,
+            const newApp = {
                 studentId: currentUser.id,
                 projectId,
                 professorId: project.professorId,
@@ -360,36 +438,57 @@ const App: React.FC = () => {
                 viewedByProfessor: false,
                 viewedByStudent: true,
             };
-            setApplications(prev => [...prev, newApp]);
-            setIsLoading(false);
+            
+            await addDoc(collection(db, "applications"), newApp);
             handleNavigate('myApplications');
-        }, 1000);
+        } catch (err) {
+            console.error(err);
+            setError("Erro ao realizar inscrição.");
+        } finally {
+            setIsLoading(false);
+        }
     };
     
+    // File upload is simulated by converting to Base64 to store in Firestore for simplicity
     const handleUpdateCurriculum = (file: File) => {
         if (!currentUser || currentUser.role !== UserRole.STUDENT) return;
         setIsLoading(true);
-        setTimeout(() => { // Simulate API call
-            const updatedUser = {
-                ...currentUser,
-                curriculum: file,
-                curriculumFileName: file.name,
-            } as Student;
-    
-            setCurrentUser(updatedUser);
-            setUsers(users => users.map(u => u.id === currentUser.id ? updatedUser : u));
-            setIsLoading(false);
-    
-            openModal(
-                'Sucesso',
-                <div>
-                    <p>Seu currículo foi atualizado com sucesso!</p>
-                    <div className="flex justify-end mt-6">
-                        <button onClick={closeModal} className="px-5 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors">OK</button>
+        
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = async () => {
+            try {
+                const base64 = reader.result as string;
+                const userRef = doc(db, "users", currentUser.id);
+                
+                await updateDoc(userRef, {
+                    curriculumBase64: base64,
+                    curriculumFileName: file.name
+                });
+                
+                // Update local user state immediately
+                setCurrentUser({ ...currentUser, curriculumBase64: base64, curriculumFileName: file.name } as Student);
+
+                openModal(
+                    'Sucesso',
+                    <div>
+                        <p>Seu currículo foi atualizado com sucesso!</p>
+                        <div className="flex justify-end mt-6">
+                            <button onClick={closeModal} className="px-5 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors">OK</button>
+                        </div>
                     </div>
-                </div>
-            );
-        }, 1000);
+                );
+            } catch (err) {
+                console.error(err);
+                setError("Erro ao salvar currículo.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        reader.onerror = () => {
+            setIsLoading(false);
+            setError("Erro ao processar arquivo.");
+        }
     };
 
     const openModal = (title: string, body: React.ReactElement) => {
@@ -401,20 +500,29 @@ const App: React.FC = () => {
         setIsModalOpen(false);
     };
     
-    const handleConfirmSelection = (appId: number, studentId: number, projectId: number) => {
-        const confirmAction = () => {
-            setApplications(apps => apps.map(app => 
-                app.id === appId ? { ...app, status: ApplicationStatus.SELECTED, viewedByStudent: false } : app
-            ));
-            
-            setProjects(projs => projs.map(proj => {
-                if (proj.id === projectId) {
-                    return { ...proj, vacancies: Math.max(0, proj.vacancies - 1) };
+    const handleConfirmSelection = (appId: string, studentId: string, projectId: string) => {
+        const confirmAction = async () => {
+            try {
+                // 1. Update Application Status
+                await updateDoc(doc(db, "applications", appId), {
+                    status: ApplicationStatus.SELECTED,
+                    viewedByStudent: false
+                });
+
+                // 2. Decrease Project Vacancies
+                const project = projects.find(p => p.id === projectId);
+                if (project) {
+                    await updateDoc(doc(db, "projects", projectId), {
+                        vacancies: Math.max(0, project.vacancies - 1)
+                    });
                 }
-                return proj;
-            }));
-            closeModal();
-            handleNavigate('candidatures');
+                
+                closeModal();
+                handleNavigate('candidatures');
+            } catch (err) {
+                console.error(err);
+                alert("Erro ao selecionar candidato.");
+            }
         };
 
         openModal(
@@ -429,13 +537,19 @@ const App: React.FC = () => {
         );
     };
 
-    const handleRejectCandidate = (appId: number) => {
-        const rejectAction = () => {
-            setApplications(apps => apps.map(app => 
-                app.id === appId ? { ...app, status: ApplicationStatus.NOT_SELECTED, viewedByStudent: false } : app
-            ));
-            closeModal();
-            handleNavigate('candidatures');
+    const handleRejectCandidate = (appId: string) => {
+        const rejectAction = async () => {
+            try {
+                await updateDoc(doc(db, "applications", appId), {
+                    status: ApplicationStatus.NOT_SELECTED,
+                    viewedByStudent: false
+                });
+                closeModal();
+                handleNavigate('candidatures');
+            } catch (err) {
+                console.error(err);
+                alert("Erro ao rejeitar candidato.");
+            }
         };
 
         openModal(
@@ -450,35 +564,55 @@ const App: React.FC = () => {
         );
     };
 
-    const handleChangeAppStatus = (appId: number, newStatus: ApplicationStatus) => {
-        setApplications(apps => apps.map(app => 
-            app.id === appId 
-            ? { ...app, status: newStatus, viewedByProfessor: newStatus === ApplicationStatus.ACCEPTED ? false : app.viewedByProfessor } 
-            : app
-        ));
-        if(newStatus === ApplicationStatus.DECLINED) {
+    const handleChangeAppStatus = async (appId: string, newStatus: ApplicationStatus) => {
+        try {
             const app = applications.find(a => a.id === appId);
-            if (app) {
-                setProjects(projs => projs.map(p => p.id === app.projectId ? {...p, vacancies: p.vacancies + 1} : p));
+            if (!app) return;
+
+            const updateData: any = { 
+                status: newStatus,
+                viewedByProfessor: newStatus === ApplicationStatus.ACCEPTED ? false : app.viewedByProfessor
+            };
+            
+            await updateDoc(doc(db, "applications", appId), updateData);
+
+            if(newStatus === ApplicationStatus.DECLINED) {
+                const project = projects.find(p => p.id === app.projectId);
+                if (project) {
+                    await updateDoc(doc(db, "projects", project.id), {
+                         vacancies: project.vacancies + 1
+                    });
+                }
             }
+            handleNavigate('myApplications');
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao atualizar status.");
         }
-        handleNavigate('myApplications');
     }
     
-    const handleCancelApplication = (applicationId: number) => {
-        const confirmAction = () => {
-            const appToCancel = applications.find(a => a.id === applicationId);
-            if (!appToCancel) return;
+    const handleCancelApplication = (applicationId: string) => {
+        const confirmAction = async () => {
+            try {
+                const appToCancel = applications.find(a => a.id === applicationId);
+                if (!appToCancel) return;
 
-            setApplications(apps => apps.filter(app => app.id !== applicationId));
+                await deleteDoc(doc(db, "applications", applicationId));
 
-            if (appToCancel.status === ApplicationStatus.SELECTED) {
-                setProjects(projs => projs.map(p => 
-                    p.id === appToCancel.projectId ? { ...p, vacancies: p.vacancies + 1 } : p
-                ));
+                if (appToCancel.status === ApplicationStatus.SELECTED) {
+                    const project = projects.find(p => p.id === appToCancel.projectId);
+                    if (project) {
+                        await updateDoc(doc(db, "projects", project.id), {
+                            vacancies: project.vacancies + 1
+                        });
+                    }
+                }
+                
+                closeModal();
+            } catch (err) {
+                console.error(err);
+                alert("Erro ao cancelar candidatura.");
             }
-            
-            closeModal();
         };
 
         openModal(
@@ -494,8 +628,15 @@ const App: React.FC = () => {
     };
 
     const renderView = () => {
-        // Security Guard: If no user is logged in, preventing rendering protected views
-        // This handles the race condition where currentUser is null but view hasn't updated to login yet
+        if (isAuthChecking) {
+            return (
+                <div className="flex h-screen w-full items-center justify-center">
+                    <Spinner className="w-12 h-12 text-primary" />
+                </div>
+            );
+        }
+
+        // Security Guard
         if (!currentUser && view.name !== 'login' && view.name !== 'signup') {
              return <LoginView onLogin={handleLogin} onNavigate={handleNavigate} error={error} isLoading={isLoading} />;
         }
@@ -508,7 +649,7 @@ const App: React.FC = () => {
             case 'editProject': return <ProjectFormView onSubmit={handleUpdateProject} projectToEdit={view.data} isLoading={isLoading} onNavigate={handleNavigate} />;
             case 'candidatures': 
                 const profApps = applications.filter(a => a.professorId === currentUser?.id);
-                return <CandidaturesView applications={profApps} projects={projects} users={users} onNavigate={handleNavigate} onSelect={handleConfirmSelection} onReject={handleRejectCandidate}/>;
+                return <CandidaturesView applications={profApps} projects={projects} users={usersCache} onNavigate={handleNavigate} onSelect={handleConfirmSelection} onReject={handleRejectCandidate}/>;
             case 'availableProjects': return <AvailableProjectsView projects={projects} onNavigate={handleNavigate}/>;
             case 'projectDetails': return <ProjectDetailsView project={view.data} currentUser={currentUser} applications={applications} onApply={handleApply} onNavigate={handleNavigate} isLoading={isLoading} />;
             case 'myApplications': return <MyApplicationsView applications={applications.filter(a => a.studentId === currentUser?.id)} projects={projects} onStatusChange={handleChangeAppStatus} onCancel={handleCancelApplication} />;
@@ -539,7 +680,7 @@ const App: React.FC = () => {
 const inputStyles = "w-full px-4 py-2 bg-light border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white transition-all";
 
 const LoginView = ({ onLogin, onNavigate, error, isLoading }: any) => {
-    const [nusp, setNusp] = useState('');
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     return (
         <div className="max-w-md mx-auto bg-white shadow-xl rounded-2xl p-8 mt-16 border border-gray-100">
@@ -551,14 +692,14 @@ const LoginView = ({ onLogin, onNavigate, error, isLoading }: any) => {
                 <p className="text-text-secondary mt-1">Faça login para continuar</p>
             </div>
             {error && <p className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</p>}
-            <form onSubmit={e => { e.preventDefault(); onLogin(nusp, password); }} className="space-y-6">
+            <form onSubmit={e => { e.preventDefault(); onLogin(email, password); }} className="space-y-6">
                 <div>
-                    <label className="block text-text-secondary mb-2 font-medium" htmlFor="nusp">NUSP ou email USP</label>
-                    <input type="text" id="nusp" value={nusp} onChange={e => setNusp(e.target.value)} className={inputStyles} />
+                    <label className="block text-text-secondary mb-2 font-medium" htmlFor="email">E-mail</label>
+                    <input type="email" id="email" value={email} onChange={e => setEmail(e.target.value)} className={inputStyles} placeholder="seu.email@usp.br" required/>
                 </div>
                 <div>
                     <label className="block text-text-secondary mb-2 font-medium" htmlFor="password">Senha</label>
-                    <input type="password" id="password" value={password} onChange={e => setPassword(e.target.value)} className={inputStyles} />
+                    <input type="password" id="password" value={password} onChange={e => setPassword(e.target.value)} className={inputStyles} required/>
                 </div>
                 <button type="submit" disabled={isLoading} className="w-full bg-primary text-white py-3 rounded-lg hover:bg-primary-hover font-semibold transition-all duration-300 flex items-center justify-center disabled:bg-gray-400">
                     {isLoading ? <Spinner className="w-6 h-6 text-white"/> : 'Acessar'}
@@ -699,7 +840,7 @@ const ProfileView = ({ currentUser, onUpdate, isLoading }: { currentUser: User, 
                     </div>
                     <div>
                          <label className="block text-text-secondary font-medium mb-1">E-mail</label>
-                         <input name="email" type="email" value={formData.email} onChange={handleChange} className={inputStyles} required />
+                         <input name="email" type="email" value={formData.email} onChange={handleChange} className={inputStyles} disabled title="Email não pode ser alterado diretamente" required />
                     </div>
                     
                     {isStudent && (
@@ -796,7 +937,7 @@ const ProjectFormView = ({ onSubmit, projectToEdit, isLoading, onNavigate }: any
         e.preventDefault();
         const projectData = {
             ...formData,
-            keywords: formData.keywords.split(',').map(k => k.trim()),
+            keywords: formData.keywords.split(',').map((k: string) => k.trim()),
             vacancies: Number(formData.vacancies),
             hasScholarship: !!formData.scholarshipDetails,
         };
@@ -886,7 +1027,9 @@ const CandidaturesView = ({ applications, projects, users, onNavigate, onSelect,
                             <tbody>
                                 {projectApps.map((app: Application) => {
                                     const student = users.find((s: User) => s.id === app.studentId) as Student | undefined;
-                                    const curriculumUrl = student?.curriculum ? URL.createObjectURL(student.curriculum) : '#';
+                                    // Handle base64 display
+                                    const curriculumUrl = student?.curriculumBase64 || '#';
+                                    const hasCurriculum = !!student?.curriculumBase64;
                                     
                                     const statusBadgeStyles: {[key: string]: string} = {
                                         [ApplicationStatus.PENDING]: 'bg-yellow-100 text-yellow-800',
@@ -898,13 +1041,13 @@ const CandidaturesView = ({ applications, projects, users, onNavigate, onSelect,
 
                                     return (
                                         <tr key={app.id} className="border-b border-gray-100 last:border-0 hover:bg-light transition-colors">
-                                            <td className="p-4 font-semibold text-text-primary">{student?.name}</td>
+                                            <td className="p-4 font-semibold text-text-primary">{student?.name || 'Carregando...'}</td>
                                             <td className="p-4 text-text-primary hidden md:table-cell">{student?.nusp}</td>
                                             <td className="p-4 text-text-primary hidden lg:table-cell">{student?.course}</td>
                                             <td className="p-4">
-                                                {student?.curriculum ? (
-                                                    <a href={curriculumUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">
-                                                        Abrir arquivo
+                                                {hasCurriculum ? (
+                                                    <a href={curriculumUrl} download={student?.curriculumFileName || 'curriculo.pdf'} className="text-primary hover:underline font-medium">
+                                                        Baixar
                                                     </a>
                                                 ) : (
                                                     <span className="text-gray-500">Não enviado</span>
@@ -964,24 +1107,28 @@ const CandidaturesView = ({ applications, projects, users, onNavigate, onSelect,
 const AvailableProjectsView = ({ projects, onNavigate }: any) => (
      <div>
         <h1 className="text-4xl font-bold text-text-primary mb-8">Mural de IC's</h1>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {projects.map((p: Project) => (
-                <div key={p.id} className={`bg-white rounded-xl shadow-lg border border-gray-100 p-6 flex flex-col justify-between hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 ${p.vacancies === 0 ? 'opacity-70' : ''}`}>
-                    <div>
-                        <h2 className="text-xl font-bold text-primary mb-2">{p.title}</h2>
-                        <p className="text-text-secondary text-sm mb-1">Prof. {p.professorName}</p>
-                        <p className="text-gray-400 text-sm mb-4">{p.faculty} - {p.department}</p>
-                        <p className="text-text-secondary line-clamp-3 mb-4 h-16">{p.description}</p>
-                         <p className="text-sm font-semibold text-text-primary">Vagas disponíveis: {p.vacancies}</p>
+        {projects.length === 0 ? (
+            <p className="text-text-secondary text-lg">Não há projetos disponíveis no momento.</p>
+        ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {projects.map((p: Project) => (
+                    <div key={p.id} className={`bg-white rounded-xl shadow-lg border border-gray-100 p-6 flex flex-col justify-between hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 ${p.vacancies === 0 ? 'opacity-70' : ''}`}>
+                        <div>
+                            <h2 className="text-xl font-bold text-primary mb-2">{p.title}</h2>
+                            <p className="text-text-secondary text-sm mb-1">Prof. {p.professorName}</p>
+                            <p className="text-gray-400 text-sm mb-4">{p.faculty} - {p.department}</p>
+                            <p className="text-text-secondary line-clamp-3 mb-4 h-16">{p.description}</p>
+                            <p className="text-sm font-semibold text-text-primary">Vagas disponíveis: {p.vacancies}</p>
+                        </div>
+                        {p.vacancies > 0 ? (
+                            <button onClick={() => onNavigate('projectDetails', p)} className="w-full bg-primary text-white py-2.5 rounded-lg hover:bg-primary-hover font-semibold transition-all duration-300 mt-4">Ver Detalhes</button>
+                        ) : (
+                            <div className="w-full bg-gray-200 text-text-secondary text-center py-2.5 rounded-lg mt-4 cursor-not-allowed font-semibold">Vagas preenchidas</div>
+                        )}
                     </div>
-                    {p.vacancies > 0 ? (
-                        <button onClick={() => onNavigate('projectDetails', p)} className="w-full bg-primary text-white py-2.5 rounded-lg hover:bg-primary-hover font-semibold transition-all duration-300 mt-4">Ver Detalhes</button>
-                    ) : (
-                        <div className="w-full bg-gray-200 text-text-secondary text-center py-2.5 rounded-lg mt-4 cursor-not-allowed font-semibold">Vagas preenchidas</div>
-                    )}
-                </div>
-            ))}
-        </div>
+                ))}
+            </div>
+        )}
     </div>
 );
 
@@ -989,7 +1136,7 @@ const ProjectDetailsView = ({ project, currentUser, applications, onApply, onNav
     const [motivation, setMotivation] = useState('');
     const hasApplied = applications.some((a: Application) => a.projectId === project.id && a.studentId === currentUser?.id);
     const studentProfile = currentUser as Student;
-    const canApply = studentProfile && studentProfile.curriculum;
+    const canApply = studentProfile && studentProfile.curriculumBase64;
 
     return (
         <div className="max-w-4xl mx-auto">
@@ -1070,8 +1217,8 @@ const MyApplicationsView = ({ applications, projects, onStatusChange, onCancel }
                                 const project = projects.find((p: Project) => p.id === app.projectId);
                                 return (
                                     <tr key={app.id} className="border-b border-gray-100 last:border-0 hover:bg-light transition-colors">
-                                        <td className="p-4 font-semibold text-text-primary">{project?.title}</td>
-                                        <td className="p-4 text-text-primary hidden md:table-cell">{project?.professorName}</td>
+                                        <td className="p-4 font-semibold text-text-primary">{project?.title || 'Projeto removido'}</td>
+                                        <td className="p-4 text-text-primary hidden md:table-cell">{project?.professorName || '-'}</td>
                                         <td className="p-4 text-text-primary hidden lg:table-cell">{app.applicationDate}</td>
                                         <td className="p-4">{renderStatusBadge(app.status)}</td>
                                         {hasActions && (
@@ -1132,7 +1279,7 @@ const MyCurriculumView = ({ currentUser, onUpdate, isLoading }: { currentUser: S
                             </label>
                             <p className="pl-1">ou arraste e solte</p>
                         </div>
-                        <p className="text-xs text-gray-500">{selectedFile ? selectedFile.name : 'PDF, DOCX até 10MB'}</p>
+                        <p className="text-xs text-gray-500">{selectedFile ? selectedFile.name : 'PDF, DOCX até 1MB'}</p>
                     </div>
                 </div>
                 <button type="submit" disabled={!selectedFile || isLoading} className="mt-6 w-full bg-primary text-white py-3 rounded-lg hover:bg-primary-hover font-semibold transition-all duration-300 flex items-center justify-center disabled:bg-gray-400">
