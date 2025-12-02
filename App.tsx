@@ -724,7 +724,8 @@ const SignupView = ({ onSignup, onNavigate, error, isLoading }: any) => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        const userData: any = { name, nusp, email, password, role };
+        // Django requires a username field. Using email as username.
+        const userData: any = { username: email, name, nusp, email, password, role };
         if (role === UserRole.STUDENT) {
             userData.course = course;
             userData.idealPeriod = Number(idealPeriod);

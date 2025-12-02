@@ -14,6 +14,7 @@ const getHeaders = () => {
 export const api = {
     // Auth
     login: async (email: string, password: string): Promise<User> => {
+        console.log(`Tentando login em: ${API_BASE}/login/`);
         const response = await fetch(`${API_BASE}/login/`, {
             method: 'POST',
             headers: getHeaders(),
@@ -24,6 +25,7 @@ export const api = {
     },
 
     signup: async (userData: any): Promise<User> => {
+        console.log(`Tentando cadastro em: ${API_BASE}/users/`, userData);
         const response = await fetch(`${API_BASE}/users/`, {
             method: 'POST',
             headers: getHeaders(),
