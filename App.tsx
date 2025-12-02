@@ -360,7 +360,8 @@ const App: React.FC = () => {
             handleNavigate('myProjects');
         } catch (err) {
             console.error(err);
-            setError("Erro ao criar projeto.");
+            // Re-throw to be caught by the form view
+            throw err;
         } finally {
             setIsLoading(false);
         }
@@ -376,7 +377,8 @@ const App: React.FC = () => {
             handleNavigate('myProjects');
         } catch (err) {
             console.error(err);
-            setError("Erro ao atualizar projeto.");
+             // Re-throw to be caught by the form view
+             throw err;
         } finally {
              setIsLoading(false);
         }
@@ -957,6 +959,7 @@ const MyProjectsView = ({ projects, onNavigate, onEdit }: { projects: Project[],
 
 const ProjectFormView = ({ onSubmit, projectToEdit, isLoading, onNavigate }: any) => {
     const isEditing = !!projectToEdit;
+    const [localError, setLocalError] = useState(''); // Estado local para erro
     
     const [formData, setFormData] = useState({
         title: projectToEdit?.title || '',
@@ -973,8 +976,10 @@ const ProjectFormView = ({ onSubmit, projectToEdit, isLoading, onNavigate }: any
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setLocalError('');
+        
         const projectData = {
             ...formData,
             keywords: formData.keywords.split(',').map((k: string) => k.trim()),
@@ -982,16 +987,24 @@ const ProjectFormView = ({ onSubmit, projectToEdit, isLoading, onNavigate }: any
             hasScholarship: !!formData.scholarshipDetails,
         };
         
-        if (isEditing) {
-            onSubmit({ ...projectToEdit, ...projectData });
-        } else {
-            onSubmit(projectData);
+        try {
+            if (isEditing) {
+                await onSubmit({ ...projectToEdit, ...projectData });
+            } else {
+                await onSubmit(projectData);
+            }
+        } catch (e) {
+            setLocalError("Ocorreu um erro ao salvar o projeto. Tente novamente.");
         }
     };
 
     return (
         <div className="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-lg border border-gray-100">
             <h1 className="text-3xl font-bold text-text-primary mb-6 border-b border-gray-200 pb-4">{isEditing ? 'Editar Projeto' : 'Incluir Novo Projeto'}</h1>
+            
+            {/* Exibe erro se houver */}
+            {localError && <div className="bg-red-100 text-red-700 p-3 rounded-lg mb-6">{localError}</div>}
+            
             <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid md:grid-cols-2 gap-6">
                     <div>
