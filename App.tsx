@@ -679,8 +679,32 @@ const inputStyles = "w-full px-4 py-2 bg-light border border-gray-300 rounded-lg
 const LoginView = ({ onLogin, onNavigate, error, isLoading }: any) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+
+    // Check server status on mount
+    useEffect(() => {
+        const check = async () => {
+            const isOnline = await api.checkHealth();
+            setServerStatus(isOnline ? 'online' : 'offline');
+        };
+        check();
+    }, []);
+
     return (
-        <div className="max-w-md mx-auto bg-white shadow-xl rounded-2xl p-8 mt-16 border border-gray-100">
+        <div className="max-w-md mx-auto bg-white shadow-xl rounded-2xl p-8 mt-16 border border-gray-100 relative">
+            {/* Status Indicator */}
+            <div className="absolute top-4 right-4 flex items-center space-x-2 text-xs font-medium">
+                {serverStatus === 'checking' && (
+                    <span className="flex items-center text-gray-500"><Spinner className="w-3 h-3 mr-1"/> Conectando...</span>
+                )}
+                {serverStatus === 'online' && (
+                    <span className="flex items-center text-green-600"><span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span> Sistema Online</span>
+                )}
+                {serverStatus === 'offline' && (
+                    <span className="flex items-center text-red-600" title="O backend no Render parece estar desligado ou inacessível"><span className="w-2 h-2 bg-red-500 rounded-full mr-1"></span> Servidor Offline</span>
+                )}
+            </div>
+
             <div className="text-center mb-8">
                  <div className="inline-block">
                     <IcarusLogo />
@@ -689,6 +713,13 @@ const LoginView = ({ onLogin, onNavigate, error, isLoading }: any) => {
                 <p className="text-text-secondary mt-1">Faça login para continuar</p>
             </div>
             {error && <p className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</p>}
+            
+            {serverStatus === 'offline' && (
+                <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-3 rounded-lg mb-4 text-xs">
+                    <strong>Atenção:</strong> Não foi possível conectar ao servidor. O sistema pode estar reiniciando no Render (aguarde 1 min) ou houve erro no deploy.
+                </div>
+            )}
+
             <form onSubmit={e => { e.preventDefault(); onLogin(email, password); }} className="space-y-6">
                 <div>
                     <label className="block text-text-secondary mb-2 font-medium" htmlFor="email">E-mail</label>

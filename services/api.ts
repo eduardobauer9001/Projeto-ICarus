@@ -25,6 +25,22 @@ const getHeaders = () => {
 };
 
 export const api = {
+    // Health Check
+    checkHealth: async (): Promise<boolean> => {
+        try {
+            // Tenta buscar a lista de usuários apenas para ver se o servidor responde
+            // Um HEAD request é mais leve, mas nem todos backends suportam bem em rotas DRF, 
+            // então usamos GET com limit ou apenas tratamos o erro.
+            const response = await fetch(`${API_BASE}/users/`, { method: 'GET', headers: getHeaders() });
+            
+            // Se der 200 (OK), 401 (Não autorizado), 403 (Proibido) -> O servidor existe e respondeu.
+            // Se der "Failed to fetch" (Network Error) -> O servidor está morto.
+            return response.status >= 200 && response.status < 500;
+        } catch (e) {
+            return false;
+        }
+    },
+
     // Auth
     login: async (email: string, password: string): Promise<User> => {
         const url = `${API_BASE}/login/`;
@@ -44,7 +60,7 @@ export const api = {
         } catch (error: any) {
             console.error('[API Error]', error);
             if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-                throw new Error('Não foi possível conectar ao servidor. Verifique se o backend está online e se as configurações de CORS estão corretas.');
+                throw new Error('Sem conexão com o servidor. O backend no Render pode estar desligado.');
             }
             throw error;
         }
@@ -76,7 +92,7 @@ export const api = {
         } catch (error: any) {
              console.error('[API Error]', error);
              if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-                throw new Error('Não foi possível conectar ao servidor. O backend pode estar dormindo (Render) ou bloqueando a conexão (CORS).');
+                throw new Error('Sem conexão com o servidor. Verifique se o backend está online.');
             }
             throw error;
         }
