@@ -1,7 +1,7 @@
 
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import firebase from "firebase/app";
+import "firebase/auth";
+import "firebase/firestore";
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
 const firebaseConfig = {
@@ -15,8 +15,8 @@ const firebaseConfig = {
 };
 
 // Inicializa o Firebase
-const app = initializeApp(firebaseConfig);
+const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
 
 // Exporta os serviços para serem usados no App.tsx
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const auth = firebase.auth();
+export const db = firebase.firestore();

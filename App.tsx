@@ -3,28 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Student, Professor, Project, Application, UserRole, ApplicationStatus } from './types';
 import { IcarusLogo, UploadIcon, CheckIcon, XIcon, Spinner, ProfessorIcon, LoginIcon, MenuIcon, StudentIcon } from './components/icons';
 import Modal from './components/Modal';
-
-// Firebase Imports
-import { auth, db } from './services/firebase';
-import { 
-    signInWithEmailAndPassword, 
-    createUserWithEmailAndPassword, 
-    signOut, 
-    onAuthStateChanged 
-} from 'firebase/auth';
-import { 
-    collection, 
-    addDoc, 
-    updateDoc, 
-    doc, 
-    getDoc, 
-    setDoc, 
-    onSnapshot,
-    query, 
-    where,
-    deleteDoc
-} from 'firebase/firestore';
-
+import { api } from './services/api';
 
 // --- Helper Components defined outside App to prevent re-renders ---
 
@@ -191,7 +170,7 @@ const App: React.FC = () => {
     // Application Data State
     const [projects, setProjects] = useState<Project[]>([]);
     const [applications, setApplications] = useState<Application[]>([]);
-    const [usersCache, setUsersCache] = useState<User[]>([]); // Cache for displaying names in tables
+    const [usersCache, setUsersCache] = useState<User[]>([]); 
     
     // UI State
     const [error, setError] = useState<string>('');
@@ -200,69 +179,58 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isAuthChecking, setIsAuthChecking] = useState(true);
 
-    // --- Firebase Listeners ---
-
-    // 1. Auth Listener
+    // Initial Load - Check for persisted session
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                // Fetch user details from Firestore
-                const userDoc = await getDoc(doc(db, "users", user.uid));
-                if (userDoc.exists()) {
-                    setCurrentUser(userDoc.data() as User);
-                    if (view.name === 'login' || view.name === 'signup') {
-                        setView({ name: 'dashboard', data: null });
-                    }
-                } else {
-                    // Fallback if auth exists but no doc (shouldn't happen with correct signup)
-                    setError("Erro: Usuário não encontrado no banco de dados.");
-                    signOut(auth);
+        const checkAuth = async () => {
+            const storedUser = localStorage.getItem('icarus_user');
+            if (storedUser) {
+                try {
+                    const user = JSON.parse(storedUser);
+                    // Verify if user still exists in backend (optional but good practice)
+                    const freshUser = await api.getUser(user.id);
+                    setCurrentUser(freshUser);
+                    setView({ name: 'dashboard', data: null });
+                } catch (e) {
+                    // Session invalid
+                    localStorage.removeItem('icarus_user');
+                    setCurrentUser(null);
+                    setView({ name: 'login', data: null });
                 }
             } else {
-                setCurrentUser(null);
                 setView({ name: 'login', data: null });
             }
             setIsAuthChecking(false);
-        });
-        return () => unsubscribe();
+        };
+        checkAuth();
     }, []);
 
-    // 2. Data Listeners (Real-time updates)
+    // Fetch data when user is logged in
     useEffect(() => {
-        if (!currentUser) {
-            setProjects([]);
-            setApplications([]);
-            return;
-        }
-
-        const qProjects = query(collection(db, "projects"));
-        const unsubProjects = onSnapshot(qProjects, (snapshot) => {
-            const projs: Project[] = [];
-            snapshot.forEach((doc) => projs.push({ ...doc.data(), id: doc.id } as Project));
-            setProjects(projs);
-        });
-
-        const qApps = query(collection(db, "applications"));
-        const unsubApps = onSnapshot(qApps, (snapshot) => {
-            const apps: Application[] = [];
-            snapshot.forEach((doc) => apps.push({ ...doc.data(), id: doc.id } as Application));
-            setApplications(apps);
-        });
-
-        // Also fetch all users to display names in tables (simple caching)
-        const qUsers = query(collection(db, "users"));
-        const unsubUsers = onSnapshot(qUsers, (snapshot) => {
-            const u: User[] = [];
-            snapshot.forEach((doc) => u.push({ ...doc.data(), id: doc.id } as User));
-            setUsersCache(u);
-        });
-
-        return () => {
-            unsubProjects();
-            unsubApps();
-            unsubUsers();
+        const fetchData = async () => {
+            if (currentUser) {
+                try {
+                    const [p, a, u] = await Promise.all([
+                        api.getProjects(),
+                        api.getApplications(),
+                        api.getAllUsers()
+                    ]);
+                    setProjects(p);
+                    setApplications(a);
+                    setUsersCache(u);
+                } catch (e) {
+                    console.error("Failed to fetch data", e);
+                }
+            }
         };
-    }, [currentUser]);
+        
+        // Initial fetch
+        fetchData();
+
+        // Optional: Simple polling every 10 seconds to keep data fresh without websockets
+        const interval = setInterval(fetchData, 10000);
+        return () => clearInterval(interval);
+
+    }, [currentUser]); // Re-run if user changes (e.g. login)
 
 
     // Notifications Logic
@@ -279,15 +247,13 @@ const App: React.FC = () => {
         setIsLoading(true);
         setError('');
         try {
-            await signInWithEmailAndPassword(auth, emailInput, pass);
-            // Auth listener will handle the rest
+            const user = await api.login(emailInput, pass);
+            setCurrentUser(user);
+            localStorage.setItem('icarus_user', JSON.stringify(user));
+            setView({ name: 'dashboard', data: null });
         } catch (err: any) {
             console.error(err);
-            if (err.code === 'auth/invalid-credential') {
-                setError('E-mail ou senha incorretos.');
-            } else {
-                setError('Erro ao fazer login. Tente novamente.');
-            }
+            setError('E-mail ou senha incorretos (ou erro de conexão com o servidor).');
         } finally {
             setIsLoading(false);
         }
@@ -297,24 +263,13 @@ const App: React.FC = () => {
         setIsLoading(true);
         setError('');
         try {
-            // 1. Create Auth User
-            const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
-            const uid = userCredential.user.uid;
-
-            // 2. Create Firestore Doc
-            const { password, ...firestoreData } = userData; // Don't store password in Firestore
-            const newUser = { ...firestoreData, id: uid };
-            
-            await setDoc(doc(db, "users", uid), newUser);
-            
-            // Auth listener will catch the login and redirect
+            const newUser = await api.signup(userData);
+            setCurrentUser(newUser);
+            localStorage.setItem('icarus_user', JSON.stringify(newUser));
+            setView({ name: 'dashboard', data: null });
         } catch (err: any) {
             console.error(err);
-            if (err.code === 'auth/email-already-in-use') {
-                setError('Este e-mail já está cadastrado.');
-            } else {
-                setError('Erro ao criar conta: ' + err.message);
-            }
+            setError('Erro ao criar conta: ' + err.message);
         } finally {
             setIsLoading(false);
         }
@@ -324,12 +279,11 @@ const App: React.FC = () => {
         if (!currentUser) return;
         setIsLoading(true);
         try {
-            const userRef = doc(db, "users", currentUser.id);
-            await updateDoc(userRef, updatedData);
+            await api.updateProfile(currentUser.id, updatedData);
             
-            // Manually update local state for immediate feedback if needed, 
-            // though the auth listener might trigger a refresh
-            setCurrentUser({ ...currentUser, ...updatedData } as User);
+            const freshUser = { ...currentUser, ...updatedData } as User;
+            setCurrentUser(freshUser);
+            localStorage.setItem('icarus_user', JSON.stringify(freshUser));
 
             openModal(
                 'Sucesso',
@@ -349,30 +303,35 @@ const App: React.FC = () => {
     };
 
     const handleLogout = () => {
-        signOut(auth);
+        localStorage.removeItem('icarus_user');
         setCurrentUser(null);
+        setView({ name: 'login', data: null });
     };
     
     const handleNavigate = async (viewName: string, data: any = null) => {
         setError('');
         
-        // Mark notifications as read in Firestore
+        // Mark notifications as read
         if (currentUser) {
-            if (currentUser.role === UserRole.STUDENT && viewName === 'myApplications') {
-                const unreadApps = applications.filter(a => 
-                    a.studentId === currentUser.id && (a.status === ApplicationStatus.SELECTED || a.status === ApplicationStatus.NOT_SELECTED) && !a.viewedByStudent
-                );
-                unreadApps.forEach(async (app) => {
-                    await updateDoc(doc(db, "applications", app.id), { viewedByStudent: true });
-                });
-            }
-            if (currentUser.role === UserRole.PROFESSOR && viewName === 'candidatures') {
-                const unreadApps = applications.filter(a => 
-                    a.professorId === currentUser.id && (a.status === ApplicationStatus.PENDING || a.status === ApplicationStatus.ACCEPTED) && !a.viewedByProfessor
-                );
-                unreadApps.forEach(async (app) => {
-                     await updateDoc(doc(db, "applications", app.id), { viewedByProfessor: true });
-                });
+            try {
+                if (currentUser.role === UserRole.STUDENT && viewName === 'myApplications') {
+                    const unreadApps = applications.filter(a => 
+                        a.studentId === currentUser.id && (a.status === ApplicationStatus.SELECTED || a.status === ApplicationStatus.NOT_SELECTED) && !a.viewedByStudent
+                    );
+                    await Promise.all(unreadApps.map(app => api.updateApplication(app.id, { viewedByStudent: true })));
+                    // Optimistic update
+                    setApplications(prev => prev.map(a => unreadApps.find(u => u.id === a.id) ? {...a, viewedByStudent: true} : a));
+                }
+                if (currentUser.role === UserRole.PROFESSOR && viewName === 'candidatures') {
+                    const unreadApps = applications.filter(a => 
+                        a.professorId === currentUser.id && (a.status === ApplicationStatus.PENDING || a.status === ApplicationStatus.ACCEPTED) && !a.viewedByProfessor
+                    );
+                    await Promise.all(unreadApps.map(app => api.updateApplication(app.id, { viewedByProfessor: true })));
+                     // Optimistic update
+                     setApplications(prev => prev.map(a => unreadApps.find(u => u.id === a.id) ? {...a, viewedByProfessor: true} : a));
+                }
+            } catch (e) {
+                console.error("Error marking as read", e);
             }
         }
 
@@ -385,7 +344,7 @@ const App: React.FC = () => {
         setIsLoading(true);
         try {
             const professor = currentUser as Professor;
-            const newProject = {
+            const payload = {
                 ...projectData,
                 professorId: currentUser.id,
                 professorName: currentUser.name,
@@ -394,7 +353,10 @@ const App: React.FC = () => {
                 postedDate: new Date().toLocaleDateString('pt-BR'),
             };
             
-            await addDoc(collection(db, "projects"), newProject);
+            await api.createProject(payload);
+            // Refresh list
+            const p = await api.getProjects();
+            setProjects(p);
             handleNavigate('myProjects');
         } catch (err) {
             console.error(err);
@@ -407,10 +369,10 @@ const App: React.FC = () => {
     const handleUpdateProject = async (project: Project) => {
         setIsLoading(true);
         try {
-            const projectRef = doc(db, "projects", project.id);
-            // Remove id from the data being updated
-            const { id, ...dataToUpdate } = project;
-            await updateDoc(projectRef, dataToUpdate);
+            await api.updateProject(project.id, project);
+            // Refresh list
+            const p = await api.getProjects();
+            setProjects(p);
             handleNavigate('myProjects');
         } catch (err) {
             console.error(err);
@@ -439,7 +401,10 @@ const App: React.FC = () => {
                 viewedByStudent: true,
             };
             
-            await addDoc(collection(db, "applications"), newApp);
+            await api.createApplication(newApp);
+            
+            const a = await api.getApplications();
+            setApplications(a);
             handleNavigate('myApplications');
         } catch (err) {
             console.error(err);
@@ -449,18 +414,16 @@ const App: React.FC = () => {
         }
     };
     
-    // File upload is simulated by converting to Base64 to store in Firestore for simplicity
     const handleUpdateCurriculum = (file: File) => {
         if (!currentUser || currentUser.role !== UserRole.STUDENT) return;
         
-        // Firestore limit check (approx 900KB safe margin for 1MB limit)
+        // Limit check still useful for UX
         if (file.size > 900 * 1024) { 
             openModal(
                 'Arquivo muito grande',
                 <div>
                     <p className="text-red-600 font-medium">O arquivo excede o limite permitido.</p>
-                    <p className="mt-2 text-sm text-text-secondary">Para manter o serviço gratuito e rápido, limitamos os currículos a <strong>900KB</strong>.</p>
-                    <p className="mt-1 text-sm text-text-secondary">Por favor, comprima seu PDF ou tente outro arquivo.</p>
+                    <p className="mt-2 text-sm text-text-secondary">Limite: <strong>900KB</strong>.</p>
                     <div className="flex justify-end mt-6">
                         <button onClick={closeModal} className="px-5 py-2 bg-gray-200 text-text-secondary rounded-lg hover:bg-gray-300 transition-colors">Fechar</button>
                     </div>
@@ -476,15 +439,15 @@ const App: React.FC = () => {
         reader.onload = async () => {
             try {
                 const base64 = reader.result as string;
-                const userRef = doc(db, "users", currentUser.id);
                 
-                await updateDoc(userRef, {
+                await api.updateProfile(currentUser.id, {
                     curriculumBase64: base64,
                     curriculumFileName: file.name
                 });
                 
-                // Update local user state immediately
-                setCurrentUser({ ...currentUser, curriculumBase64: base64, curriculumFileName: file.name } as Student);
+                const freshUser = { ...currentUser, curriculumBase64: base64, curriculumFileName: file.name } as Student;
+                setCurrentUser(freshUser);
+                localStorage.setItem('icarus_user', JSON.stringify(freshUser));
 
                 openModal(
                     'Sucesso',
@@ -521,7 +484,7 @@ const App: React.FC = () => {
         const confirmAction = async () => {
             try {
                 // 1. Update Application Status
-                await updateDoc(doc(db, "applications", appId), {
+                await api.updateApplication(appId, {
                     status: ApplicationStatus.SELECTED,
                     viewedByStudent: false
                 });
@@ -529,11 +492,16 @@ const App: React.FC = () => {
                 // 2. Decrease Project Vacancies
                 const project = projects.find(p => p.id === projectId);
                 if (project) {
-                    await updateDoc(doc(db, "projects", projectId), {
+                    await api.updateProject(projectId, {
                         vacancies: Math.max(0, project.vacancies - 1)
                     });
                 }
                 
+                // Refresh data
+                const [newApps, newProjs] = await Promise.all([api.getApplications(), api.getProjects()]);
+                setApplications(newApps);
+                setProjects(newProjs);
+
                 closeModal();
                 handleNavigate('candidatures');
             } catch (err) {
@@ -557,10 +525,12 @@ const App: React.FC = () => {
     const handleRejectCandidate = (appId: string) => {
         const rejectAction = async () => {
             try {
-                await updateDoc(doc(db, "applications", appId), {
+                await api.updateApplication(appId, {
                     status: ApplicationStatus.NOT_SELECTED,
                     viewedByStudent: false
                 });
+                const newApps = await api.getApplications();
+                setApplications(newApps);
                 closeModal();
                 handleNavigate('candidatures');
             } catch (err) {
@@ -591,16 +561,22 @@ const App: React.FC = () => {
                 viewedByProfessor: newStatus === ApplicationStatus.ACCEPTED ? false : app.viewedByProfessor
             };
             
-            await updateDoc(doc(db, "applications", appId), updateData);
+            await api.updateApplication(appId, updateData);
 
             if(newStatus === ApplicationStatus.DECLINED) {
                 const project = projects.find(p => p.id === app.projectId);
                 if (project) {
-                    await updateDoc(doc(db, "projects", project.id), {
+                    await api.updateProject(project.id, {
                          vacancies: project.vacancies + 1
                     });
                 }
             }
+            
+            // Refresh
+            const [newApps, newProjs] = await Promise.all([api.getApplications(), api.getProjects()]);
+            setApplications(newApps);
+            setProjects(newProjs);
+
             handleNavigate('myApplications');
         } catch (err) {
             console.error(err);
@@ -614,17 +590,21 @@ const App: React.FC = () => {
                 const appToCancel = applications.find(a => a.id === applicationId);
                 if (!appToCancel) return;
 
-                await deleteDoc(doc(db, "applications", applicationId));
+                await api.deleteApplication(applicationId);
 
                 if (appToCancel.status === ApplicationStatus.SELECTED) {
                     const project = projects.find(p => p.id === appToCancel.projectId);
                     if (project) {
-                        await updateDoc(doc(db, "projects", project.id), {
+                        await api.updateProject(project.id, {
                             vacancies: project.vacancies + 1
                         });
                     }
                 }
                 
+                const [newApps, newProjs] = await Promise.all([api.getApplications(), api.getProjects()]);
+                setApplications(newApps);
+                setProjects(newProjs);
+
                 closeModal();
             } catch (err) {
                 console.error(err);
