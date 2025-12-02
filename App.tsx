@@ -384,6 +384,36 @@ const App: React.FC = () => {
         }
     };
 
+    const handleDeleteProject = (projectId: string) => {
+        const confirmAction = async () => {
+            setIsLoading(true);
+            try {
+                await api.deleteProject(projectId);
+                const p = await api.getProjects();
+                setProjects(p);
+                closeModal();
+                handleNavigate('myProjects');
+            } catch (err) {
+                console.error(err);
+                setError("Erro ao excluir projeto.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        openModal(
+            'Excluir Projeto',
+            <div>
+                <p className="text-text-secondary">Tem certeza que deseja excluir o projeto <strong>{projects.find(p => p.id === projectId)?.title}</strong>?</p>
+                <p className="text-sm text-red-600 mt-2">Esta ação não pode ser desfeita e excluirá todas as candidaturas associadas.</p>
+                <div className="flex justify-end space-x-3 mt-6">
+                    <button onClick={closeModal} className="px-5 py-2 bg-gray-200 text-text-secondary rounded-lg hover:bg-gray-300 transition-colors">Cancelar</button>
+                    <button onClick={confirmAction} className="px-5 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">Excluir Permanentemente</button>
+                </div>
+            </div>
+        );
+    };
+
     const handleApply = async (projectId: string, motivation: string) => {
         if (!currentUser || currentUser.role !== UserRole.STUDENT) return;
 
@@ -645,7 +675,7 @@ const App: React.FC = () => {
             case 'signup': return <SignupView onSignup={handleSignup} onNavigate={handleNavigate} error={error} isLoading={isLoading} />;
             case 'myProjects': return <MyProjectsView projects={projects.filter(p => p.professorId === currentUser?.id)} onNavigate={handleNavigate} onEdit={(project) => handleNavigate('editProject', project)} />;
             case 'createProject': return <ProjectFormView onSubmit={handleCreateProject} isLoading={isLoading} onNavigate={handleNavigate} />;
-            case 'editProject': return <ProjectFormView onSubmit={handleUpdateProject} projectToEdit={view.data} isLoading={isLoading} onNavigate={handleNavigate} />;
+            case 'editProject': return <ProjectFormView onSubmit={handleUpdateProject} onDelete={handleDeleteProject} projectToEdit={view.data} isLoading={isLoading} onNavigate={handleNavigate} />;
             case 'candidatures': 
                 const profApps = applications.filter(a => a.professorId === currentUser?.id);
                 return <CandidaturesView applications={profApps} projects={projects} users={usersCache} onNavigate={handleNavigate} onSelect={handleConfirmSelection} onReject={handleRejectCandidate}/>;
@@ -957,7 +987,7 @@ const MyProjectsView = ({ projects, onNavigate, onEdit }: { projects: Project[],
     </div>
 );
 
-const ProjectFormView = ({ onSubmit, projectToEdit, isLoading, onNavigate }: any) => {
+const ProjectFormView = ({ onSubmit, onDelete, projectToEdit, isLoading, onNavigate }: any) => {
     const isEditing = !!projectToEdit;
     const [localError, setLocalError] = useState(''); // Estado local para erro
     
@@ -1041,13 +1071,21 @@ const ProjectFormView = ({ onSubmit, projectToEdit, isLoading, onNavigate }: any
                     <input name="vacancies" type="number" min="0" value={formData.vacancies} onChange={handleChange} className={inputStyles} required />
                 </div>
 
-                <div className="flex justify-end pt-4 border-t border-gray-200 space-x-3">
-                     <button type="button" onClick={() => onNavigate('myProjects')} className="bg-gray-200 text-text-secondary px-8 py-3 rounded-lg hover:bg-gray-300 transition-colors font-semibold">
-                        Cancelar
-                     </button>
-                     <button type="submit" disabled={isLoading} className="bg-primary text-white px-8 py-3 rounded-lg hover:bg-primary-hover transition-all duration-300 shadow hover:shadow-lg font-semibold flex items-center justify-center disabled:bg-gray-400">
-                        {isLoading ? <Spinner className="w-6 h-6 text-white"/> : (isEditing ? 'Atualizar Projeto' : 'Salvar Projeto')}
-                     </button>
+                <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+                     {isEditing ? (
+                        <button type="button" onClick={() => onDelete(projectToEdit.id)} className="bg-red-50 text-red-600 px-6 py-3 rounded-lg hover:bg-red-100 transition-colors font-semibold border border-red-200">
+                            Excluir Projeto
+                        </button>
+                     ) : <div></div>}
+
+                     <div className="flex space-x-3">
+                         <button type="button" onClick={() => onNavigate('myProjects')} className="bg-gray-200 text-text-secondary px-8 py-3 rounded-lg hover:bg-gray-300 transition-colors font-semibold">
+                            Cancelar
+                         </button>
+                         <button type="submit" disabled={isLoading} className="bg-primary text-white px-8 py-3 rounded-lg hover:bg-primary-hover transition-all duration-300 shadow hover:shadow-lg font-semibold flex items-center justify-center disabled:bg-gray-400">
+                            {isLoading ? <Spinner className="w-6 h-6 text-white"/> : (isEditing ? 'Atualizar Projeto' : 'Salvar Projeto')}
+                         </button>
+                     </div>
                 </div>
             </form>
         </div>

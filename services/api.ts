@@ -210,6 +210,14 @@ export const api = {
         return toCamelCase(data);
     },
 
+    deleteProject: async (projectId: string): Promise<void> => {
+        const response = await fetch(`${API_BASE}/projects/${projectId}/`, {
+            method: 'DELETE',
+            headers: getHeaders(),
+        });
+        if (!response.ok) throw new Error('Delete project failed');
+    },
+
     // Applications
     getApplications: async (): Promise<Application[]> => {
         try {
