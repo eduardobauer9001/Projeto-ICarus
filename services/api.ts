@@ -1,9 +1,20 @@
 import { User, Project, Application, Student, Professor } from '../types';
 
 // Detect URL from environment or default to Render
-// We ensure no trailing slash to prevent double slashes later
-const ENV_URL = (import.meta as any).env?.VITE_API_URL || 'https://icarus-api.onrender.com/api';
-const API_BASE = ENV_URL.endsWith('/') ? ENV_URL.slice(0, -1) : ENV_URL;
+let rawUrl = (import.meta as any).env?.VITE_API_URL || 'https://icarus-api.onrender.com/api';
+
+// 1. Remove trailing slash if present (e.g., ".../api/" -> ".../api")
+if (rawUrl.endsWith('/')) {
+    rawUrl = rawUrl.slice(0, -1);
+}
+
+// 2. Ensure it ends with /api (e.g., "...onrender.com" -> "...onrender.com/api")
+// This prevents 404 errors if the user forgot to add /api in Vercel env vars or config
+if (!rawUrl.endsWith('/api')) {
+    rawUrl += '/api';
+}
+
+const API_BASE = rawUrl;
 
 // Helper to handle headers
 const getHeaders = () => {
