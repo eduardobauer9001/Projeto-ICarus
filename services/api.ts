@@ -1,9 +1,10 @@
 
 import { User, Project, Application, Student, Professor } from '../types';
 
-const API_URL = 'http://localhost:8000/api';
+// Agora usamos a URL do Render como padrão se não houver variável de ambiente
+const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://icarus-api.onrender.com/api';
 
-// Helper to handle headers (including auth token if we implement token-based auth later)
+// Helper to handle headers
 const getHeaders = () => {
     return {
         'Content-Type': 'application/json',
@@ -13,7 +14,7 @@ const getHeaders = () => {
 export const api = {
     // Auth
     login: async (email: string, password: string): Promise<User> => {
-        const response = await fetch(`${API_URL}/login/`, {
+        const response = await fetch(`${API_BASE}/login/`, {
             method: 'POST',
             headers: getHeaders(),
             body: JSON.stringify({ email, password }),
@@ -23,20 +24,27 @@ export const api = {
     },
 
     signup: async (userData: any): Promise<User> => {
-        const response = await fetch(`${API_URL}/users/`, {
+        const response = await fetch(`${API_BASE}/users/`, {
             method: 'POST',
             headers: getHeaders(),
             body: JSON.stringify(userData),
         });
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || 'Signup failed');
+            try {
+                const errorData = await response.json();
+                // Django DRF validation errors usually come as { field: [errors] }
+                // We flatten them to a string to show to the user
+                const errorMessage = errorData.detail || Object.values(errorData).flat().join(', ') || 'Signup failed';
+                throw new Error(errorMessage);
+            } catch (e: any) {
+                throw new Error(e.message || 'Signup failed');
+            }
         }
         return await response.json();
     },
 
     updateProfile: async (userId: string, data: any): Promise<User> => {
-        const response = await fetch(`${API_URL}/users/${userId}/`, {
+        const response = await fetch(`${API_BASE}/users/${userId}/`, {
             method: 'PATCH',
             headers: getHeaders(),
             body: JSON.stringify(data),
@@ -46,7 +54,7 @@ export const api = {
     },
 
     getUser: async (userId: string): Promise<User> => {
-        const response = await fetch(`${API_URL}/users/${userId}/`, {
+        const response = await fetch(`${API_BASE}/users/${userId}/`, {
             headers: getHeaders(),
         });
         if (!response.ok) throw new Error('Fetch user failed');
@@ -54,7 +62,7 @@ export const api = {
     },
     
     getAllUsers: async (): Promise<User[]> => {
-        const response = await fetch(`${API_URL}/users/`, {
+        const response = await fetch(`${API_BASE}/users/`, {
             headers: getHeaders(),
         });
         if (!response.ok) return [];
@@ -63,7 +71,7 @@ export const api = {
 
     // Projects
     getProjects: async (): Promise<Project[]> => {
-        const response = await fetch(`${API_URL}/projects/`, {
+        const response = await fetch(`${API_BASE}/projects/`, {
             headers: getHeaders(),
         });
         if (!response.ok) return [];
@@ -71,7 +79,7 @@ export const api = {
     },
 
     createProject: async (projectData: any): Promise<Project> => {
-        const response = await fetch(`${API_URL}/projects/`, {
+        const response = await fetch(`${API_BASE}/projects/`, {
             method: 'POST',
             headers: getHeaders(),
             body: JSON.stringify(projectData),
@@ -81,7 +89,7 @@ export const api = {
     },
 
     updateProject: async (projectId: string, projectData: any): Promise<Project> => {
-        const response = await fetch(`${API_URL}/projects/${projectId}/`, {
+        const response = await fetch(`${API_BASE}/projects/${projectId}/`, {
             method: 'PATCH',
             headers: getHeaders(),
             body: JSON.stringify(projectData),
@@ -92,7 +100,7 @@ export const api = {
 
     // Applications
     getApplications: async (): Promise<Application[]> => {
-        const response = await fetch(`${API_URL}/applications/`, {
+        const response = await fetch(`${API_BASE}/applications/`, {
             headers: getHeaders(),
         });
         if (!response.ok) return [];
@@ -100,7 +108,7 @@ export const api = {
     },
 
     createApplication: async (appData: any): Promise<Application> => {
-        const response = await fetch(`${API_URL}/applications/`, {
+        const response = await fetch(`${API_BASE}/applications/`, {
             method: 'POST',
             headers: getHeaders(),
             body: JSON.stringify(appData),
@@ -110,7 +118,7 @@ export const api = {
     },
 
     updateApplication: async (appId: string, data: any): Promise<Application> => {
-        const response = await fetch(`${API_URL}/applications/${appId}/`, {
+        const response = await fetch(`${API_BASE}/applications/${appId}/`, {
             method: 'PATCH',
             headers: getHeaders(),
             body: JSON.stringify(data),
@@ -120,7 +128,7 @@ export const api = {
     },
 
     deleteApplication: async (appId: string): Promise<void> => {
-        const response = await fetch(`${API_URL}/applications/${appId}/`, {
+        const response = await fetch(`${API_BASE}/applications/${appId}/`, {
             method: 'DELETE',
             headers: getHeaders(),
         });
