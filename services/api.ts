@@ -1,48 +1,74 @@
-
 import { User, Project, Application, Student, Professor } from '../types';
 
-// Agora usamos a URL do Render como padrão se não houver variável de ambiente
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://icarus-api.onrender.com/api';
+// Detect URL from environment or default to Render
+// We ensure no trailing slash to prevent double slashes later
+const ENV_URL = (import.meta as any).env?.VITE_API_URL || 'https://icarus-api.onrender.com/api';
+const API_BASE = ENV_URL.endsWith('/') ? ENV_URL.slice(0, -1) : ENV_URL;
 
 // Helper to handle headers
 const getHeaders = () => {
     return {
         'Content-Type': 'application/json',
+        // 'Authorization': 'Bearer ...' // If we implement JWT later
     };
 };
 
 export const api = {
     // Auth
     login: async (email: string, password: string): Promise<User> => {
-        console.log(`Tentando login em: ${API_BASE}/login/`);
-        const response = await fetch(`${API_BASE}/login/`, {
-            method: 'POST',
-            headers: getHeaders(),
-            body: JSON.stringify({ email, password }),
-        });
-        if (!response.ok) throw new Error('Login failed');
-        return await response.json();
+        const url = `${API_BASE}/login/`;
+        console.log(`[API] Login request to: ${url}`);
+        
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({ email, password }),
+            });
+            if (!response.ok) {
+                if (response.status === 400 || response.status === 401) throw new Error('Credenciais inválidas');
+                throw new Error(`Erro do servidor: ${response.status}`);
+            }
+            return await response.json();
+        } catch (error: any) {
+            console.error('[API Error]', error);
+            if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+                throw new Error('Não foi possível conectar ao servidor. Verifique se o backend está online e se as configurações de CORS estão corretas.');
+            }
+            throw error;
+        }
     },
 
     signup: async (userData: any): Promise<User> => {
-        console.log(`Tentando cadastro em: ${API_BASE}/users/`, userData);
-        const response = await fetch(`${API_BASE}/users/`, {
-            method: 'POST',
-            headers: getHeaders(),
-            body: JSON.stringify(userData),
-        });
-        if (!response.ok) {
-            try {
-                const errorData = await response.json();
-                // Django DRF validation errors usually come as { field: [errors] }
-                // We flatten them to a string to show to the user
-                const errorMessage = errorData.detail || Object.values(errorData).flat().join(', ') || 'Signup failed';
-                throw new Error(errorMessage);
-            } catch (e: any) {
-                throw new Error(e.message || 'Signup failed');
+        const url = `${API_BASE}/users/`;
+        console.log(`[API] Signup request to: ${url}`, userData);
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(userData),
+            });
+            
+            if (!response.ok) {
+                try {
+                    const errorData = await response.json();
+                    // Django DRF validation errors usually come as { field: [errors] }
+                    // We flatten them to a string to show to the user
+                    const errorMessage = errorData.detail || Object.entries(errorData).map(([key, val]) => `${key}: ${val}`).join(', ') || 'Signup failed';
+                    throw new Error(errorMessage);
+                } catch (e: any) {
+                    throw new Error(`Erro ${response.status}: ${response.statusText}`);
+                }
             }
+            return await response.json();
+        } catch (error: any) {
+             console.error('[API Error]', error);
+             if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+                throw new Error('Não foi possível conectar ao servidor. O backend pode estar dormindo (Render) ou bloqueando a conexão (CORS).');
+            }
+            throw error;
         }
-        return await response.json();
     },
 
     updateProfile: async (userId: string, data: any): Promise<User> => {
@@ -64,20 +90,30 @@ export const api = {
     },
     
     getAllUsers: async (): Promise<User[]> => {
-        const response = await fetch(`${API_BASE}/users/`, {
-            headers: getHeaders(),
-        });
-        if (!response.ok) return [];
-        return await response.json();
+        try {
+            const response = await fetch(`${API_BASE}/users/`, {
+                headers: getHeaders(),
+            });
+            if (!response.ok) return [];
+            return await response.json();
+        } catch (e) {
+            console.error(e);
+            return [];
+        }
     },
 
     // Projects
     getProjects: async (): Promise<Project[]> => {
-        const response = await fetch(`${API_BASE}/projects/`, {
-            headers: getHeaders(),
-        });
-        if (!response.ok) return [];
-        return await response.json();
+        try {
+            const response = await fetch(`${API_BASE}/projects/`, {
+                headers: getHeaders(),
+            });
+            if (!response.ok) return [];
+            return await response.json();
+        } catch (e) {
+            console.error(e);
+            return [];
+        }
     },
 
     createProject: async (projectData: any): Promise<Project> => {
@@ -102,11 +138,16 @@ export const api = {
 
     // Applications
     getApplications: async (): Promise<Application[]> => {
-        const response = await fetch(`${API_BASE}/applications/`, {
-            headers: getHeaders(),
-        });
-        if (!response.ok) return [];
-        return await response.json();
+        try {
+            const response = await fetch(`${API_BASE}/applications/`, {
+                headers: getHeaders(),
+            });
+            if (!response.ok) return [];
+            return await response.json();
+        } catch (e) {
+            console.error(e);
+            return [];
+        }
     },
 
     createApplication: async (appData: any): Promise<Application> => {

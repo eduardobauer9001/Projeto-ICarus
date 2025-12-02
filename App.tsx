@@ -253,7 +253,7 @@ const App: React.FC = () => {
             setView({ name: 'dashboard', data: null });
         } catch (err: any) {
             console.error(err);
-            setError('E-mail ou senha incorretos (ou erro de conexão com o servidor).');
+            setError(err.message || 'E-mail ou senha incorretos.');
         } finally {
             setIsLoading(false);
         }
@@ -269,7 +269,7 @@ const App: React.FC = () => {
             setView({ name: 'dashboard', data: null });
         } catch (err: any) {
             console.error(err);
-            setError('Erro ao criar conta: ' + err.message);
+            setError(err.message || 'Erro desconhecido ao criar conta.');
         } finally {
             setIsLoading(false);
         }
@@ -724,8 +724,19 @@ const SignupView = ({ onSignup, onNavigate, error, isLoading }: any) => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        // Django requires a username field. Using email as username.
-        const userData: any = { username: email, name, nusp, email, password, role };
+        
+        // Use part of email + timestamp as safer username to avoid validator issues with special chars
+        const safeUsername = `${email.split('@')[0]}_${Date.now()}`;
+
+        const userData: any = { 
+            username: safeUsername, 
+            name, 
+            nusp, 
+            email, 
+            password, 
+            role 
+        };
+        
         if (role === UserRole.STUDENT) {
             userData.course = course;
             userData.idealPeriod = Number(idealPeriod);
