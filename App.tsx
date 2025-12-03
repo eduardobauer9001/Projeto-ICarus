@@ -1195,20 +1195,82 @@ const CandidaturesView = ({ applications, projects, users, onNavigate, onSelect,
     );
 };
 
-const AvailableProjectsView = ({ projects, onNavigate }: any) => (
+const AvailableProjectsView = ({ projects, onNavigate }: any) => {
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const filteredProjects = projects.filter((p: Project) => {
+        const search = searchTerm.toLowerCase();
+        // Safety check for fields just in case
+        const titleMatch = p.title?.toLowerCase().includes(search);
+        const descMatch = p.description?.toLowerCase().includes(search);
+        const areaMatch = p.area?.toLowerCase().includes(search);
+        const profMatch = p.professorName?.toLowerCase().includes(search);
+        // Keywords might be an array or string depending on API serialization
+        const keywordMatch = Array.isArray(p.keywords) 
+            ? p.keywords.some(k => k.toLowerCase().includes(search)) 
+            : typeof p.keywords === 'string' 
+                ? (p.keywords as string).toLowerCase().includes(search)
+                : false;
+
+        return titleMatch || descMatch || areaMatch || profMatch || keywordMatch;
+    });
+
+    return (
      <div>
-        <h1 className="text-4xl font-bold text-text-primary mb-8">Mural de IC's</h1>
-        {projects.length === 0 ? (
-            <p className="text-text-secondary text-lg">Não há projetos disponíveis no momento.</p>
+        <h1 className="text-4xl font-bold text-text-primary mb-6">Mural de IC's</h1>
+        
+        {/* Search Input */}
+        <div className="mb-8 relative max-w-2xl">
+            <input 
+                type="text" 
+                placeholder="Pesquisar por título, palavra-chave, área ou professor..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm"
+            />
+             <svg className="w-6 h-6 text-gray-400 absolute left-4 top-1/2 transform -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        </div>
+
+        {filteredProjects.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-xl border border-gray-100 shadow-sm">
+                <p className="text-text-secondary text-lg">
+                    {searchTerm ? `Nenhum projeto encontrado para "${searchTerm}".` : 'Não há projetos disponíveis no momento.'}
+                </p>
+                {searchTerm && (
+                    <button onClick={() => setSearchTerm('')} className="mt-4 text-primary font-semibold hover:underline">
+                        Limpar pesquisa
+                    </button>
+                )}
+            </div>
         ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {projects.map((p: Project) => (
+                {filteredProjects.map((p: Project) => (
                     <div key={p.id} className={`bg-white rounded-xl shadow-lg border border-gray-100 p-6 flex flex-col justify-between hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 ${p.vacancies === 0 ? 'opacity-70' : ''}`}>
                         <div>
-                            <h2 className="text-xl font-bold text-primary mb-2">{p.title}</h2>
+                            <div className="flex justify-between items-start mb-2">
+                                <h2 className="text-xl font-bold text-primary">{p.title}</h2>
+                                {p.vacancies === 0 && <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full font-medium">Encerrado</span>}
+                            </div>
                             <p className="text-text-secondary text-sm mb-1">Prof. {p.professorName}</p>
                             <p className="text-gray-400 text-sm mb-4">{p.faculty} - {p.department}</p>
-                            <p className="text-text-secondary line-clamp-3 mb-4 h-16">{p.description}</p>
+                            
+                            {/* Keywords tags */}
+                            {Array.isArray(p.keywords) && p.keywords.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    {p.keywords.slice(0, 3).map((k, i) => (
+                                        <span key={i} className="bg-blue-50 text-blue-600 text-xs px-2 py-1 rounded-md">
+                                            {k}
+                                        </span>
+                                    ))}
+                                    {p.keywords.length > 3 && (
+                                        <span className="text-xs text-gray-400">+{p.keywords.length - 3}</span>
+                                    )}
+                                </div>
+                            )}
+
+                            <p className="text-text-secondary line-clamp-3 mb-4 h-16 text-sm">{p.description}</p>
                             <p className="text-sm font-semibold text-text-primary">Vagas disponíveis: {p.vacancies}</p>
                         </div>
                         {p.vacancies > 0 ? (
@@ -1222,6 +1284,7 @@ const AvailableProjectsView = ({ projects, onNavigate }: any) => (
         )}
     </div>
 );
+};
 
 const ProjectDetailsView = ({ project, currentUser, applications, onApply, onNavigate, isLoading }: any) => {
     const [motivation, setMotivation] = useState('');
